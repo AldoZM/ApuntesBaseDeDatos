@@ -1,0 +1,80 @@
+\chapter{Transacciones y Control de Concurrencia}
+
+\section{ACID}
+
+Las 4 propiedades que garantizan que las transacciones son confiables:
+
+\begin{itemize}
+  \item \textbf{Atomicidad:} todo o nada --- si falla un paso, se revierten todos
+  \item \textbf{Consistencia:} la BD pasa de un estado válido a otro válido (constraints se respetan)
+  \item \textbf{Aislamiento:} transacciones concurrentes no se ven entre sí hasta hacer commit
+  \item \textbf{Durabilidad:} tras commit, los cambios persisten aunque el servidor se caiga (WAL)
+\end{itemize}
+
+\section{Niveles de aislamiento}
+
+De menor a mayor aislamiento (PostgreSQL):
+\begin{itemize}
+  \item \textbf{Read Uncommitted:} no existe en PG (se comporta como Read Committed)
+  \item \textbf{Read Committed:} default en PG. Ve solo commits. Sujeto a non-repeatable reads.
+  \item \textbf{Repeatable Read:} misma fila devuelve mismo valor en toda la transacción.
+  \item \textbf{Serializable:} aislamiento total. Más lento, detecta anomalías serializables.
+\end{itemize}
+
+\section{Locks y Deadlocks}
+
+PostgreSQL usa MVCC: lecturas no bloquean escrituras. Locks explícitos con \texttt{LOCK TABLE} o \texttt{SELECT FOR UPDATE}. Deadlock ocurre cuando A espera a B y B espera a A; PostgreSQL lo detecta y aborta una de las transacciones.
+
+\begin{lstlisting}[caption={BEGIN, COMMIT, ROLLBACK, SAVEPOINT}]
+BEGIN;
+
+UPDATE cuentas SET saldo = saldo - 1000 WHERE id = 1;
+UPDATE cuentas SET saldo = saldo + 1000 WHERE id = 2;
+
+-- Si algo falla:
+ROLLBACK;
+-- Si todo OK:
+COMMIT;
+
+-- SAVEPOINT: rollback parcial
+BEGIN;
+UPDATE inventario SET stock = stock - 5 WHERE producto_id = 10;
+SAVEPOINT antes_descuento;
+UPDATE precios SET precio = precio * 0.9 WHERE producto_id = 10;
+ROLLBACK TO SAVEPOINT antes_descuento;
+COMMIT;
+\end{lstlisting}
+
+\begin{lstlisting}[caption={SELECT FOR UPDATE y nivel de aislamiento}]
+-- Bloquear fila para actualización (evita race condition)
+BEGIN;
+SELECT saldo FROM cuentas WHERE id = 1 FOR UPDATE;
+UPDATE cuentas SET saldo = saldo - 500 WHERE id = 1;
+COMMIT;
+
+-- Cambiar nivel de aislamiento
+BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ;
+SELECT total FROM reporte WHERE mes = '2024-01';
+COMMIT;
+\end{lstlisting}
+
+\begin{lstlisting}[caption={Detectar y matar conexiones colgadas}]
+-- Ver transacciones activas hace más de 5 minutos
+SELECT pid, usename, state, query_start,
+       NOW() - query_start AS duracion,
+       LEFT(query, 80) AS query_corta
+FROM   pg_stat_activity
+WHERE  state != 'idle'
+  AND  query_start < NOW() - INTERVAL '5 minutes';
+
+-- Terminar transacción colgada
+SELECT pg_terminate_backend(12345);
+\end{lstlisting}
+
+\begin{entrevistabox}
+\begin{enumerate}
+  \item Explica ACID con un ejemplo de transferencia bancaria.
+  \item ¿Qué es un deadlock y cómo lo detecta/resuelve PostgreSQL?
+  \item ¿Cuál es la diferencia entre Read Committed y Repeatable Read?
+\end{enumerate}
+\end{entrevistabox}

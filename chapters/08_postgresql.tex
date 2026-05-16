@@ -1,0 +1,104 @@
+\chapter{PostgreSQL --- Características Avanzadas}
+
+\section{Por qué PostgreSQL}
+
+RDBMS open source más avanzado. Extensible mediante extensiones, soporta JSON como ciudadano de primera clase, herencia de tablas, tipos custom, y tiene MVCC robusto.
+
+\begin{itemize}
+  \item JSONB: JSON binario indexable (vs JSON texto sin índice)
+  \item Extensiones: PostGIS (geo), pg\_trgm (trigrams), uuid-ossp, pgcrypto
+  \item VACUUM: recupera espacio de filas muertas (MVCC genera versiones viejas)
+  \item Roles: sistema de permisos basado en roles, no usuarios individuales
+  \item Particionamiento nativo: RANGE, LIST, HASH
+\end{itemize}
+
+\section{JSONB}
+
+Almacena JSON en formato binario. Soporta índices GIN, operadores \texttt{->}, \texttt{->>}, \texttt{@>}, \texttt{?}.
+
+\begin{itemize}
+  \item \texttt{->} devuelve JSON (objeto/array)
+  \item \texttt{->>} devuelve texto
+  \item \texttt{@>} contiene (compatible con índice GIN)
+  \item \texttt{?} tiene la clave
+\end{itemize}
+
+\section{VACUUM y mantenimiento}
+
+VACUUM recupera espacio de tuplas muertas. AUTOVACUUM lo hace automáticamente. VACUUM ANALYZE actualiza estadísticas del planificador. VACUUM FULL bloquea la tabla (evitar en producción).
+
+\begin{lstlisting}[caption={JSONB --- consultas y operadores}]
+CREATE TABLE eventos (
+    id      SERIAL PRIMARY KEY,
+    datos   JSONB NOT NULL,
+    creado  TIMESTAMP DEFAULT NOW()
+);
+
+INSERT INTO eventos (datos) VALUES
+  ('{"tipo": "login", "usuario": "ana", "ip": "192.168.1.1"}'),
+  ('{"tipo": "compra", "usuario": "carlos", "monto": 350.00}');
+
+-- Acceder a campos
+SELECT datos->>'usuario' AS usuario, datos->>'tipo' AS tipo
+FROM eventos;
+
+-- Filtrar con @> (usa índice GIN)
+CREATE INDEX idx_eventos_gin ON eventos USING GIN(datos);
+SELECT * FROM eventos WHERE datos @> '{"tipo": "login"}';
+
+-- Actualizar campo en JSONB
+UPDATE eventos
+SET datos = datos || '{"procesado": true}'::jsonb
+WHERE datos->>'tipo' = 'compra';
+\end{lstlisting}
+
+\begin{lstlisting}[caption={Roles, permisos y VACUUM}]
+-- Crear rol de solo lectura
+CREATE ROLE readonly;
+GRANT CONNECT ON DATABASE mibd TO readonly;
+GRANT USAGE ON SCHEMA public TO readonly;
+GRANT SELECT ON ALL TABLES IN SCHEMA public TO readonly;
+
+-- Crear usuario con ese rol
+CREATE USER reportes_user WITH PASSWORD 'segura123';
+GRANT readonly TO reportes_user;
+
+-- VACUUM manual
+VACUUM ANALYZE empleados;
+
+-- Ver tablas que necesitan vacuum
+SELECT relname, n_dead_tup, last_vacuum
+FROM   pg_stat_user_tables
+WHERE  n_dead_tup > 10000
+ORDER BY n_dead_tup DESC;
+\end{lstlisting}
+
+\begin{lstlisting}[caption={Particionamiento nativo en PostgreSQL}]
+-- Tabla particionada por rango de fecha
+CREATE TABLE ventas (
+    id      SERIAL,
+    fecha   DATE NOT NULL,
+    monto   NUMERIC(10,2),
+    region  VARCHAR(50),
+    PRIMARY KEY (id, fecha)
+) PARTITION BY RANGE (fecha);
+
+-- Crear particiones
+CREATE TABLE ventas_2023 PARTITION OF ventas
+    FOR VALUES FROM ('2023-01-01') TO ('2024-01-01');
+
+CREATE TABLE ventas_2024 PARTITION OF ventas
+    FOR VALUES FROM ('2024-01-01') TO ('2025-01-01');
+
+-- PostgreSQL enruta automáticamente al insertar
+INSERT INTO ventas (fecha, monto, region)
+VALUES ('2024-06-15', 5000.00, 'Norte');
+\end{lstlisting}
+
+\begin{entrevistabox}
+\begin{enumerate}
+  \item ¿Cuál es la diferencia entre JSON y JSONB en PostgreSQL?
+  \item ¿Qué hace VACUUM y por qué es necesario en PostgreSQL?
+  \item ¿Cómo implementarías seguridad de solo lectura para un usuario de reportes?
+\end{enumerate}
+\end{entrevistabox}

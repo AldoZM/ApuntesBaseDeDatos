@@ -1,0 +1,73 @@
+\chapter{Bases de Datos NoSQL}
+
+\section{¿Cuándo NoSQL?}
+
+SQL es la elección default. NoSQL cuando: esquema cambia frecuentemente, se requiere escalado horizontal masivo, el modelo de datos es inherentemente no relacional, o la latencia de lectura es crítica.
+
+\section{Tipos y cuándo usar cada uno}
+
+\begin{itemize}
+  \item \textbf{Documental (MongoDB):} catálogos de productos, CMS, datos con estructura variable por documento
+  \item \textbf{Clave-valor (Redis):} caché, sesiones, colas, contadores en tiempo real
+  \item \textbf{Columnar (Cassandra):} series de tiempo, logs, IoT --- escritura masiva y consulta por clave de partición
+  \item \textbf{Grafos (Neo4j):} redes sociales, detección de fraude, recomendaciones --- cuando las relaciones son el dato
+\end{itemize}
+
+\section{Teorema CAP}
+
+Sistema distribuido puede garantizar solo 2 de 3: Consistencia, Disponibilidad, Tolerancia a particiones.
+
+\begin{itemize}
+  \item \textbf{CP:} MongoDB, HBase --- prefiere consistencia sobre disponibilidad
+  \item \textbf{AP:} Cassandra, DynamoDB --- prefiere disponibilidad; consistencia eventual
+  \item \textbf{CA:} solo sistemas no distribuidos (RDBMS tradicional en un nodo)
+\end{itemize}
+
+\begin{lstlisting}[language=, caption={MongoDB --- CRUD básico}]
+// Insertar documento
+db.productos.insertOne({
+  nombre: "Laptop",
+  precio: 15000,
+  specs: { ram: "16GB", ssd: "512GB" },
+  tags: ["electrónica", "computadoras"]
+});
+
+// Consultar con filtro anidado
+db.productos.find(
+  { "specs.ram": "16GB", precio: { $lt: 20000 } },
+  { nombre: 1, precio: 1, _id: 0 }
+);
+
+// Agregar con $group (equivale a GROUP BY)
+db.ventas.aggregate([
+  { $match: { fecha: { $gte: new Date("2024-01-01") } } },
+  { $group: { _id: "$region", total: { $sum: "$monto" } } },
+  { $sort: { total: -1 } }
+]);
+\end{lstlisting}
+
+\begin{lstlisting}[language=, caption={Redis --- caché y estructuras de datos}]
+# String con TTL
+SET session:user:123 '{"nombre":"Ana","rol":"admin"}' EX 3600
+
+# Contador atómico
+INCR visitas:articulo:456
+EXPIRE visitas:articulo:456 86400
+
+# Lista (cola de trabajo)
+LPUSH cola:emails "job:uuid-1234"
+RPOP cola:emails
+
+# Set ordenado (ranking)
+ZADD ranking 1500 "usuario:ana"
+ZADD ranking 2300 "usuario:carlos"
+ZREVRANGE ranking 0 9 WITHSCORES
+\end{lstlisting}
+
+\begin{entrevistabox}
+\begin{enumerate}
+  \item ¿Cuándo elegiría MongoDB sobre PostgreSQL para almacenar datos de productos?
+  \item Explica el teorema CAP y dónde encajan Redis y Cassandra.
+  \item ¿Cuál es la diferencia entre consistencia fuerte y eventual?
+\end{enumerate}
+\end{entrevistabox}

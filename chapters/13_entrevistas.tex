@@ -1,0 +1,81 @@
+\chapter{Preguntas de Entrevista DBA}
+
+Este capítulo consolida las preguntas de todos los capítulos más preguntas adicionales, organizadas por tema.
+
+\section{SQL}
+
+\begin{entrevistabox}
+\begin{enumerate}
+  \item ¿Cuál es el orden lógico de evaluación de una query SELECT?
+  \item ¿Qué diferencia hay entre UNION y UNION ALL?
+  \item ¿Cómo funciona un SELF JOIN? Da un ejemplo.
+  \item ¿Qué es una subquery correlacionada? ¿Cuándo es problemática?
+  \item ¿Cuándo usarías EXISTS en lugar de IN?
+  \item ¿Qué devuelve COUNT(*) vs COUNT(columna)?
+  \item ¿Cuál es la diferencia entre TRUNCATE, DELETE y DROP?
+  \item Escribe una query que encuentre el segundo salario más alto.
+  \item ¿Cómo eliminas duplicados de una tabla manteniendo una sola copia?
+  \item ¿Qué es una vista materializada? ¿Cuándo la usarías?
+\end{enumerate}
+\end{entrevistabox}
+
+\section{Índices y rendimiento}
+
+\begin{entrevistabox}
+\begin{enumerate}
+  \item ¿Qué es un índice cubriente (covering index)?
+  \item ¿Por qué \texttt{LIKE '\%texto'} no usa el índice B-tree pero \texttt{LIKE 'texto\%'} sí?
+  \item ¿Cuándo NO deberías crear un índice?
+  \item ¿Qué es un index scan vs bitmap index scan?
+  \item ¿Cómo afectan los índices a las operaciones de escritura masiva?
+\end{enumerate}
+\end{entrevistabox}
+
+\section{Transacciones y concurrencia}
+
+\begin{entrevistabox}
+\begin{enumerate}
+  \item ¿Qué es un phantom read? ¿Qué nivel de aislamiento lo previene?
+  \item ¿Cuál es la diferencia entre optimistic y pessimistic locking?
+  \item ¿Cómo funciona MVCC en PostgreSQL?
+  \item ¿Qué es un dirty read?
+  \item Explica el problema de non-repeatable read.
+  \item ¿Cómo PostgreSQL detecta y resuelve deadlocks?
+\end{enumerate}
+\end{entrevistabox}
+
+\section{Modelado y diseño}
+
+\begin{entrevistabox}
+\begin{enumerate}
+  \item ¿Cuándo desnormalizarías intencionalmente una tabla?
+  \item ¿Cuál es la diferencia entre 3NF y BCNF?
+  \item ¿Cómo modelarías un sistema de permisos basado en roles (RBAC)?
+  \item ¿Cuándo usarías un UUID como PK en lugar de un entero?
+  \item ¿Cómo diseñarías el schema para un sistema de auditoría (audit log)?
+\end{enumerate}
+\end{entrevistabox}
+
+\section{NoSQL y arquitectura distribuida}
+
+\begin{entrevistabox}
+\begin{enumerate}
+  \item ¿Cuándo elegiría Cassandra sobre PostgreSQL?
+  \item ¿Qué es sharding y cuándo se necesita?
+  \item ¿Cuál es la diferencia entre replicación sincrónica y asincrónica?
+  \item ¿Qué significa consistencia eventual? ¿En qué situaciones es aceptable?
+  \item ¿Cómo implementarías caché con Redis para reducir carga en PostgreSQL?
+\end{enumerate}
+\end{entrevistabox}
+
+\section{Administración y operaciones}
+
+\begin{entrevistabox}
+\begin{enumerate}
+  \item ¿Qué harías si la BD está lenta en producción a las 3am?
+  \item ¿Cómo harías una migración de schema sin downtime?
+  \item ¿Qué es WAL (Write-Ahead Log) y por qué existe?
+  \item ¿Cómo harías rollback de una migración ya aplicada?
+  \item ¿Qué estrategia de backup usarías para una BD de 500GB?
+\end{enumerate}
+\end{entrevistabox}

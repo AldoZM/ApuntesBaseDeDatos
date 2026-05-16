@@ -1,0 +1,114 @@
+\chapter{Diseño de Base de Datos --- Caso Práctico}
+
+\section{Proceso de diseño}
+
+\begin{enumerate}
+  \item Recopilar requisitos (entrevistas con stakeholders)
+  \item Modelo conceptual (ER / UML)
+  \item Modelo lógico (tablas, atributos, tipos, FK)
+  \item Normalización (3NF mínimo)
+  \item Modelo físico (índices, particiones, tipos específicos del DBMS)
+  \item Revisión de rendimiento (EXPLAIN, pruebas de carga)
+\end{enumerate}
+
+\section{Caso: Sistema de Biblioteca}
+
+\textbf{Requisitos:} registrar libros, copias físicas, socios, préstamos y devoluciones.
+
+Entidades: \texttt{Libro}, \texttt{Copia}, \texttt{Socio}, \texttt{Prestamo}, \texttt{Autor}, \texttt{Categoria}.
+
+Relaciones clave:
+\begin{itemize}
+  \item Libro tiene muchas Copias (1:N)
+  \item Libro tiene muchos Autores (M:N via \texttt{libro\_autor})
+  \item Copia puede estar en muchos Préstamos a lo largo del tiempo (1:N)
+  \item Socio tiene muchos Préstamos (1:N)
+\end{itemize}
+
+\begin{diagramabox}{ER --- Sistema Biblioteca}
+\begin{center}
+  % Generar con: make diagrams (requiere Java + plantuml.jar)
+  % Fuente: images/src_plantuml/11_er_biblioteca.puml
+  \fbox{\parbox{0.7\textwidth}{\centering\vspace{1em}[Diagrama PlantUML: ejecutar \texttt{make diagrams}]\vspace{1em}}}
+\end{center}
+\end{diagramabox}
+
+\begin{lstlisting}[caption={DDL completo --- Sistema Biblioteca}]
+CREATE TABLE categorias (
+    id     SERIAL PRIMARY KEY,
+    nombre VARCHAR(80) NOT NULL UNIQUE
+);
+
+CREATE TABLE libros (
+    id           SERIAL PRIMARY KEY,
+    isbn         VARCHAR(13) UNIQUE NOT NULL,
+    titulo       VARCHAR(200) NOT NULL,
+    anio_pub     SMALLINT,
+    id_categoria INTEGER REFERENCES categorias(id)
+);
+
+CREATE TABLE autores (
+    id     SERIAL PRIMARY KEY,
+    nombre VARCHAR(150) NOT NULL
+);
+
+CREATE TABLE libro_autor (
+    id_libro  INTEGER REFERENCES libros(id)  ON DELETE CASCADE,
+    id_autor  INTEGER REFERENCES autores(id) ON DELETE CASCADE,
+    PRIMARY KEY (id_libro, id_autor)
+);
+
+CREATE TABLE copias (
+    id        SERIAL PRIMARY KEY,
+    id_libro  INTEGER NOT NULL REFERENCES libros(id),
+    codigo    VARCHAR(20) UNIQUE NOT NULL,
+    estado    VARCHAR(20) DEFAULT 'disponible'
+              CHECK (estado IN ('disponible','prestada','dannada','baja'))
+);
+
+CREATE TABLE socios (
+    id        SERIAL PRIMARY KEY,
+    nombre    VARCHAR(150) NOT NULL,
+    email     VARCHAR(200) UNIQUE NOT NULL,
+    activo    BOOLEAN DEFAULT TRUE,
+    creado_en DATE DEFAULT CURRENT_DATE
+);
+
+CREATE TABLE prestamos (
+    id          SERIAL PRIMARY KEY,
+    id_copia    INTEGER NOT NULL REFERENCES copias(id),
+    id_socio    INTEGER NOT NULL REFERENCES socios(id),
+    fecha_ini   DATE NOT NULL DEFAULT CURRENT_DATE,
+    fecha_dev   DATE NOT NULL,
+    devuelto_en DATE,
+    CONSTRAINT chk_fechas CHECK (fecha_dev > fecha_ini)
+);
+\end{lstlisting}
+
+\begin{lstlisting}[caption={Consultas operacionales sobre el diseño}]
+-- Copias disponibles por categoría
+SELECT c.nombre AS categoria, COUNT(cp.id) AS copias_disponibles
+FROM   categorias c
+JOIN   libros l  ON l.id_categoria = c.id
+JOIN   copias cp ON cp.id_libro = l.id AND cp.estado = 'disponible'
+GROUP BY c.nombre
+ORDER BY copias_disponibles DESC;
+
+-- Socios con préstamos vencidos
+SELECT s.nombre, s.email, p.fecha_dev, l.titulo
+FROM   prestamos p
+JOIN   socios s  ON p.id_socio = s.id
+JOIN   copias cp ON p.id_copia = cp.id
+JOIN   libros l  ON cp.id_libro = l.id
+WHERE  p.devuelto_en IS NULL
+  AND  p.fecha_dev < CURRENT_DATE
+ORDER BY p.fecha_dev;
+\end{lstlisting}
+
+\begin{entrevistabox}
+\begin{enumerate}
+  \item ¿Cómo modelarías la diferencia entre un libro (título) y una copia física en una biblioteca?
+  \item ¿Qué índices agregarías a este diseño para optimizar las consultas más frecuentes?
+  \item ¿Cómo manejarías el historial de préstamos si un socio puede tomar el mismo libro varias veces?
+\end{enumerate}
+\end{entrevistabox}

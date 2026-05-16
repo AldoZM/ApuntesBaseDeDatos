@@ -1,0 +1,81 @@
+\chapter{Administración de Bases de Datos}
+
+\section{Backups}
+
+\begin{itemize}
+  \item \textbf{pg\_dump:} backup lógico de una BD (SQL o formato custom). Portable entre versiones.
+  \item \textbf{pg\_dumpall:} backup de todas las BDs + roles globales.
+  \item \textbf{pg\_basebackup:} backup físico del cluster (para PITR --- Point In Time Recovery).
+  \item Estrategia: backup completo diario + WAL archiving para PITR.
+  \item Siempre probar restauración. Un backup no probado no existe.
+\end{itemize}
+
+\section{Usuarios, roles y permisos}
+
+PostgreSQL usa roles; un rol con \texttt{LOGIN} es un usuario. Permisos granulares por objeto (tabla, schema, BD). Principio de mínimo privilegio.
+
+\section{Monitoreo básico}
+
+Vistas del sistema: \texttt{pg\_stat\_activity} (conexiones activas), \texttt{pg\_stat\_user\_tables} (estadísticas por tabla), \texttt{pg\_locks} (locks activos), \texttt{pg\_stat\_statements} (extensión para queries lentas).
+
+\begin{lstlisting}[caption={Backups con pg\_dump y restauración}]
+-- Backup lógico (formato custom, comprimido)
+pg_dump -U postgres -Fc -f backup_mibd_20260516.dump mibd
+
+-- Backup lógico en SQL plano
+pg_dump -U postgres -f backup_mibd.sql mibd
+
+-- Restaurar desde formato custom
+pg_restore -U postgres -d mibd_nueva backup_mibd_20260516.dump
+
+-- Restaurar SQL plano
+psql -U postgres -d mibd_nueva -f backup_mibd.sql
+
+-- Backup de todas las bases + roles globales
+pg_dumpall -U postgres -f cluster_completo.sql
+\end{lstlisting}
+
+\begin{lstlisting}[caption={Monitoreo --- conexiones, locks y queries lentas}]
+-- Conexiones activas
+SELECT pid, usename, state, query_start,
+       LEFT(query, 100) AS query_corta
+FROM   pg_stat_activity
+WHERE  state != 'idle'
+ORDER BY query_start;
+
+-- Terminar conexión colgada
+SELECT pg_terminate_backend(pid)
+FROM   pg_stat_activity
+WHERE  state = 'idle in transaction'
+  AND  query_start < NOW() - INTERVAL '10 minutes';
+
+-- Ver locks activos
+SELECT pid, relation::regclass, mode, granted
+FROM   pg_locks
+WHERE  NOT granted;
+\end{lstlisting}
+
+\begin{lstlisting}[caption={pg\_stat\_statements --- queries más lentas}]
+-- Activar extensión (requiere superuser, reinicio de PG)
+CREATE EXTENSION IF NOT EXISTS pg_stat_statements;
+
+-- Top 10 queries más lentas por tiempo promedio
+SELECT LEFT(query, 120) AS query,
+       calls,
+       ROUND((total_exec_time / calls)::numeric, 2) AS avg_ms,
+       ROUND(total_exec_time::numeric, 2) AS total_ms
+FROM   pg_stat_statements
+ORDER BY avg_ms DESC
+LIMIT  10;
+
+-- Resetear estadísticas
+SELECT pg_stat_statements_reset();
+\end{lstlisting}
+
+\begin{entrevistabox}
+\begin{enumerate}
+  \item ¿Cuál es la diferencia entre pg\_dump y pg\_basebackup?
+  \item ¿Cómo identificarías una query lenta en producción sin bajar el servidor?
+  \item ¿Qué es el principio de mínimo privilegio aplicado a roles de base de datos?
+\end{enumerate}
+\end{entrevistabox}

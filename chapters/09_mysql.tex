@@ -1,0 +1,87 @@
+\chapter{MySQL / MariaDB}
+
+\section{InnoDB vs MyISAM}
+
+InnoDB es el motor default desde MySQL 5.5. MyISAM es legado --- sin transacciones, sin FK.
+
+\begin{itemize}
+  \item \textbf{InnoDB:} ACID, FK, row-level locking, MVCC, crash recovery
+  \item \textbf{MyISAM:} más rápido en lecturas puras, sin transacciones, table-level lock
+  \item Siempre usa InnoDB en producción. MyISAM solo para tablas de solo lectura con volumen extremo.
+\end{itemize}
+
+\section{Diferencias clave con PostgreSQL}
+
+\begin{itemize}
+  \item \texttt{AUTO\_INCREMENT} vs \texttt{SERIAL} (PG)
+  \item No tiene \texttt{RETURNING} en INSERT/UPDATE
+  \item \texttt{GROUP BY} más permisivo (columnas no agregadas sin ONLY\_FULL\_GROUP\_BY)
+  \item \texttt{SHOW PROCESSLIST}, \texttt{SHOW STATUS} para monitoreo
+  \item Replicación master-slave nativa (binlog)
+\end{itemize}
+
+\section{Particionamiento}
+
+Divide tabla en particiones físicas. Tipos: RANGE, LIST, HASH, KEY. Mejora rendimiento en tablas grandes cuando las queries filtran por la columna de partición.
+
+\begin{lstlisting}[caption={Sintaxis MySQL --- diferencias con PostgreSQL}]
+-- AUTO_INCREMENT (MySQL) vs SERIAL (PostgreSQL)
+CREATE TABLE productos (
+    id      INT AUTO_INCREMENT PRIMARY KEY,
+    nombre  VARCHAR(100) NOT NULL,
+    precio  DECIMAL(10,2)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- UPSERT en MySQL
+INSERT INTO clientes (email, nombre, visitas)
+VALUES ('ana@ej.com', 'Ana', 1)
+ON DUPLICATE KEY UPDATE visitas = visitas + 1;
+
+-- Ver motor de cada tabla
+SELECT table_name, engine
+FROM   information_schema.tables
+WHERE  table_schema = 'mi_base';
+\end{lstlisting}
+
+\begin{lstlisting}[caption={Particionamiento por RANGE en MySQL}]
+CREATE TABLE ventas (
+    id      INT AUTO_INCREMENT,
+    fecha   DATE NOT NULL,
+    monto   DECIMAL(10,2),
+    PRIMARY KEY (id, fecha)
+)
+PARTITION BY RANGE (YEAR(fecha)) (
+    PARTITION p2022 VALUES LESS THAN (2023),
+    PARTITION p2023 VALUES LESS THAN (2024),
+    PARTITION p2024 VALUES LESS THAN (2025),
+    PARTITION pfuture VALUES LESS THAN MAXVALUE
+);
+
+-- Partition pruning automático
+EXPLAIN SELECT * FROM ventas
+WHERE fecha BETWEEN '2023-01-01' AND '2023-12-31';
+\end{lstlisting}
+
+\begin{lstlisting}[caption={Monitoreo y replicación básica}]
+-- Ver procesos activos
+SHOW PROCESSLIST;
+
+-- Ver estado del servidor
+SHOW STATUS LIKE 'Threads%';
+SHOW STATUS LIKE 'Innodb_row_lock%';
+
+-- Estado de replicación (en esclavo)
+SHOW SLAVE STATUS\G
+
+-- Variables de configuración
+SHOW VARIABLES LIKE 'innodb_buffer_pool_size';
+SHOW VARIABLES LIKE 'max_connections';
+\end{lstlisting}
+
+\begin{entrevistabox}
+\begin{enumerate}
+  \item ¿Cuáles son las diferencias principales entre InnoDB y MyISAM?
+  \item ¿Cómo implementarías un UPSERT en MySQL?
+  \item ¿Qué es el partition pruning y cuándo beneficia al rendimiento?
+\end{enumerate}
+\end{entrevistabox}
