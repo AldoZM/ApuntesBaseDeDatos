@@ -1,4 +1,4 @@
-\chapter{Modelo Relacional}
+\chapter[Modelo Relacional]{\emj{🗄️}~Modelo Relacional}
 
 \section[Conceptos fundamentales]{\emj{🧠}~Conceptos fundamentales}
 
@@ -18,7 +18,7 @@ Las relaciones entre tablas se expresan mediante llaves, no mediante punteros f�
 La fortaleza del modelo relacional es su independencia física: el motor puede cambiar cómo almacena los datos sin afectar las consultas SQL.
 \end{teoriabox}
 
-\section[Llaves]{\emj{🧠}~Llaves}
+\section[Llaves]{\emj{🔑}~Llaves}
 
 Las llaves son el mecanismo de identificación y relación entre tablas.
 Una tabla bien diseñada siempre tiene una PK definida; las FK crean el grafo de relaciones del esquema.
@@ -38,7 +38,7 @@ Prefiere surrogate keys (SERIAL/UUID) para tablas con relaciones: son inmutables
 Usa natural keys solo cuando el atributo es \emph{verdaderamente} estable y único (ej. ISBN de un libro, código IATA de un aeropuerto).
 \end{tipbox}
 
-\section[Integridad referencial]{\emj{🧠}~Integridad referencial}
+\section[Integridad referencial]{\emj{🔗}~Integridad referencial}
 
 La integridad referencial garantiza que una FK siempre apunte a un registro que existe en la tabla padre, o sea NULL si está permitido.
 Sin FK enforced, es posible tener huérfanos: órdenes sin cliente, facturas sin producto.

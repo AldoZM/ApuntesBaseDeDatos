@@ -1,4 +1,4 @@
-\chapter{SQL Avanzado}
+\chapter[SQL Avanzado]{\emj{🚀}~SQL Avanzado}
 
 \section[CTEs (Common Table Expressions)]{\emj{🧠}~CTEs (Common Table Expressions)}
 
@@ -12,7 +12,7 @@ En PostgreSQL, una CTE se materializa por defecto (se ejecuta una vez y el resul
   \item \texttt{MATERIALIZED} / \texttt{NOT MATERIALIZED}: hint al planificador (PG 12+)
 \end{itemize}
 
-\section[Window Functions]{\emj{🧠}~Window Functions}
+\section[Window Functions]{\emj{📊}~Window Functions}
 
 Las window functions operan sobre un conjunto de filas relacionadas (la ``ventana'') sin colapsar el resultado como hace \texttt{GROUP BY}.
 Cada fila del resultado conserva su identidad y accede a valores de filas vecinas.
@@ -29,7 +29,7 @@ Son esenciales para rankings, totales acumulados y comparaciones con período an
 Diferencia \texttt{RANK} vs \texttt{DENSE\_RANK}: con empate en posición 2, \texttt{RANK} salta al 4; \texttt{DENSE\_RANK} continúa en 3.
 \end{teoriabox}
 
-\section[EXPLAIN ANALYZE]{\emj{🧠}~EXPLAIN ANALYZE}
+\section[EXPLAIN ANALYZE]{\emj{🔍}~EXPLAIN ANALYZE}
 
 \texttt{EXPLAIN} muestra el plan de ejecución que el planificador elige sin ejecutar la query.
 \texttt{EXPLAIN ANALYZE} la ejecuta y muestra tiempos reales vs estimados.

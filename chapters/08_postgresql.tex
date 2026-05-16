@@ -1,4 +1,4 @@
-\chapter{PostgreSQL --- Características Avanzadas}
+\chapter[PostgreSQL --- Características Avanzadas]{\emj{🐘}~PostgreSQL --- Características Avanzadas}
 
 \section[Por qué PostgreSQL]{\emj{🧠}~Por qué PostgreSQL}
 
@@ -24,7 +24,7 @@ Su MVCC robusto, soporte nativo de JSON, y herramientas de administración madur
   \item Particionamiento nativo: RANGE, LIST, HASH (PG 10+)
 \end{itemize}
 
-\section[JSONB]{\emj{🧠}~JSONB}
+\section[JSONB]{\emj{📄}~JSONB}
 
 JSONB almacena JSON en formato binario descompuesto: lo parsea al insertar y guarda la estructura interna.
 Esto permite índices GIN y operadores de búsqueda que JSON texto no soporta.
@@ -37,7 +37,7 @@ Usar JSONB cuando el dato es inherentemente semiestructurado; no como sustituto 
   \item \texttt{?} tiene la clave --- verificar existencia sin importar el valor
 \end{itemize}
 
-\section[VACUUM y mantenimiento]{\emj{🧠}~VACUUM y mantenimiento}
+\section[VACUUM y mantenimiento]{\emj{🧹}~VACUUM y mantenimiento}
 
 El MVCC de PostgreSQL crea \emph{versiones muertas} de filas al hacer \texttt{UPDATE} o \texttt{DELETE}: la fila antigua queda en el heap pero invisible para nuevas transacciones.
 VACUUM recupera ese espacio. Sin VACUUM periódico, la tabla crece indefinidamente (table bloat) y el planificador trabaja con estadísticas desactualizadas.

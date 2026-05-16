@@ -1,4 +1,4 @@
-\chapter{SQL Fundamentos}
+\chapter[SQL Fundamentos]{\emj{💻}~SQL Fundamentos}
 
 \section[Sublanguages SQL]{\emj{🧠}~Sublanguages SQL}
 
@@ -17,7 +17,7 @@ Se divide en cinco sublanguages según el tipo de operación:
 DDL es auto-commit en la mayoría de los DBMS: un \texttt{DROP TABLE} no puede hacerse \texttt{ROLLBACK} una vez ejecutado (excepto en PostgreSQL, donde DDL sí es transaccional).
 \end{teoriabox}
 
-\section[DDL --- definir estructura]{\emj{🧠}~DDL --- definir estructura}
+\section[DDL --- definir estructura]{\emj{🏗️}~DDL --- definir estructura}
 
 El DDL define el esquema: qué tablas existen, qué columnas tienen y qué constraints las gobiernan.
 Los constraints se pueden definir inline (junto a la columna) o como constraints de tabla separados.
@@ -30,7 +30,7 @@ Los constraints se pueden definir inline (junto a la columna) o como constraints
   \item \texttt{DROP} elimina objeto permanentemente --- irreversible fuera de transacción
 \end{itemize}
 
-\section[DML + DQL --- manipular y consultar]{\emj{🧠}~DML + DQL --- manipular y consultar}
+\section[DML + DQL --- manipular y consultar]{\emj{🔎}~DML + DQL --- manipular y consultar}
 
 \texttt{SELECT} es el comando más complejo de SQL.
 Su orden de escritura no es el orden de evaluación:

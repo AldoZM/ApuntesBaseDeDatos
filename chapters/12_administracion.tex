@@ -1,6 +1,6 @@
-\chapter{Administración de Bases de Datos}
+\chapter[Administración de Bases de Datos]{\emj{⚙️}~Administración de Bases de Datos}
 
-\section[Backups]{\emj{🧠}~Backups}
+\section[Backups]{\emj{💾}~Backups}
 
 Un backup es inútil si no ha sido probado. La restauración es la parte importante, no el respaldo.
 PostgreSQL ofrece dos niveles de backup: lógico (SQL/dump) y físico (copia de archivos del cluster).
@@ -22,7 +22,7 @@ Verifica que los datos sean consistentes y que las aplicaciones funcionen contra
 Un backup corrupto o incompleto es igual a no tener backup.
 \end{warningbox}
 
-\section[Usuarios, roles y permisos]{\emj{🧠}~Usuarios, roles y permisos}
+\section[Usuarios, roles y permisos]{\emj{🔐}~Usuarios, roles y permisos}
 
 PostgreSQL usa \textbf{roles} como unidad principal de seguridad. Un rol con el atributo \texttt{LOGIN} funciona como usuario; sin él, es solo un grupo de permisos.
 Los permisos son granulares: a nivel de BD, schema, tabla, columna y fila (Row Level Security).
@@ -35,7 +35,7 @@ El principio de mínimo privilegio dicta que cada rol tenga exactamente los perm
   \item \texttt{pg\_hba.conf}: controla autenticación (qué IPs pueden conectarse y con qué método)
 \end{itemize}
 
-\section[Monitoreo básico]{\emj{🧠}~Monitoreo básico}
+\section[Monitoreo básico]{\emj{📊}~Monitoreo básico}
 
 El monitoreo proactivo previene incidentes; el monitoreo reactivo solo los atiende después del daño.
 Las vistas del sistema de PostgreSQL ofrecen visibilidad en tiempo real sin necesidad de herramientas externas.

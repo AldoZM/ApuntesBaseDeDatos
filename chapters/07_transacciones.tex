@@ -1,6 +1,6 @@
-\chapter{Transacciones y Control de Concurrencia}
+\chapter[Transacciones y Control de Concurrencia]{\emj{🔒}~Transacciones y Control de Concurrencia}
 
-\section[ACID]{\emj{🧠}~ACID}
+\section[ACID]{\emj{⚗️}~ACID}
 
 Una transacción es un conjunto de operaciones que se ejecutan como una unidad indivisible.
 ACID es el conjunto de propiedades que garantizan que las transacciones son confiables incluso ante fallos del sistema o acceso concurrente.
@@ -18,7 +18,7 @@ Transferir \$1000 de la cuenta A a la cuenta B involucra dos operaciones:
 \end{itemize}
 \end{teoriabox}
 
-\section[Niveles de aislamiento]{\emj{🧠}~Niveles de aislamiento}
+\section[Niveles de aislamiento]{\emj{🛡️}~Niveles de aislamiento}
 
 El aislamiento tiene un costo: mayor aislamiento implica más locks y menor concurrencia.
 El estándar SQL define cuatro niveles; PostgreSQL implementa tres efectivos (Read Uncommitted se comporta como Read Committed).
@@ -36,7 +36,7 @@ Usa \textbf{Repeatable Read} cuando una transacción hace múltiples lecturas de
 Usa \textbf{Serializable} solo cuando la correctitud lógica lo exija; tiene overhead significativo.
 \end{tipbox}
 
-\section[Locks y Deadlocks]{\emj{🧠}~Locks y Deadlocks}
+\section[Locks y Deadlocks]{\emj{⚠️}~Locks y Deadlocks}
 
 PostgreSQL usa MVCC (Multi-Version Concurrency Control): las lecturas nunca bloquean escrituras y las escrituras nunca bloquean lecturas.
 Cada transacción ve un snapshot consistente de la BD al momento de inicio.

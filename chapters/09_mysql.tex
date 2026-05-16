@@ -1,6 +1,6 @@
-\chapter{MySQL / MariaDB}
+\chapter[MySQL / MariaDB]{\emj{🐬}~MySQL / MariaDB}
 
-\section[InnoDB vs MyISAM]{\emj{🧠}~InnoDB vs MyISAM}
+\section[InnoDB vs MyISAM]{\emj{⚖️}~InnoDB vs MyISAM}
 
 MySQL históricamente separaba el servidor del motor de almacenamiento.
 InnoDB es el motor transaccional; MyISAM es el motor legado sin transacciones.
@@ -15,7 +15,7 @@ Desde MySQL 5.5 (2010), InnoDB es el motor por defecto y la elección correcta e
 \end{itemize}
 \end{teoriabox}
 
-\section[Diferencias clave con PostgreSQL]{\emj{🧠}~Diferencias clave con PostgreSQL}
+\section[Diferencias clave con PostgreSQL]{\emj{📋}~Diferencias clave con PostgreSQL}
 
 MySQL y PostgreSQL comparten el estándar SQL pero difieren en sintaxis, semántica y características.
 Conocer las diferencias es crítico al migrar entre motores o trabajar en proyectos mixtos.
@@ -29,7 +29,7 @@ Conocer las diferencias es crítico al migrar entre motores o trabajar en proyec
   \item MySQL tiene \texttt{ON DUPLICATE KEY UPDATE} para upserts; PG usa \texttt{INSERT ... ON CONFLICT}
 \end{itemize}
 
-\section[Particionamiento]{\emj{🧠}~Particionamiento}
+\section[Particionamiento]{\emj{🗂️}~Particionamiento}
 
 El particionamiento divide físicamente una tabla lógica en subtablas según un criterio.
 Mejora rendimiento cuando las queries filtran por la columna de partición (partition pruning): el motor lee solo las particiones relevantes.
