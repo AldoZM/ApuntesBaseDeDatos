@@ -1,0 +1,23 @@
+@startuml 04_er_uml_clases
+class Cliente {
+  +id: int
+  +nombre: String
+  +email: String
+  +activo: boolean
+}
+
+class Pedido {
+  +id: int
+  +fecha: Date
+  +estado: String
+}
+
+class Producto {
+  +id: int
+  +nombre: String
+  +precio: Decimal
+}
+
+Cliente "1" -- "0..*" Pedido : realiza >
+Pedido "0..*" -- "0..*" Producto : contiene >
+@enduml

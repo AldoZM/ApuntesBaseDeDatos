@@ -1,0 +1,29 @@
+@startuml 05_normalizacion
+skinparam linetype ortho
+
+package "Sin normalizar (viola 2NF)" {
+  entity "pedido_items_malo" {
+    * id_pedido <<PK>>
+    * id_producto <<PK>>
+    --
+    nombre_producto [dep. parcial!]
+    cantidad
+  }
+}
+
+package "Normalizado (2NF)" {
+  entity "pedido_items" {
+    * id_pedido <<PK, FK>>
+    * id_producto <<PK, FK>>
+    --
+    cantidad
+  }
+  entity "productos" {
+    * id <<PK>>
+    --
+    nombre
+  }
+}
+
+pedido_items }o--|| productos
+@enduml

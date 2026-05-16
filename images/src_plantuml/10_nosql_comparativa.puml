@@ -1,0 +1,15 @@
+@startuml 10_nosql_comparativa
+skinparam rectangle {
+  BackgroundColor<<sql>> LightBlue
+  BackgroundColor<<doc>> LightGreen
+  BackgroundColor<<kv>> LightYellow
+  BackgroundColor<<col>> LightPink
+  BackgroundColor<<graph>> Plum
+}
+
+rectangle "Relacional\nPostgreSQL/MySQL\nACID, joins, schema fijo" <<sql>>
+rectangle "Documental\nMongoDB\nJSON, schema flexible" <<doc>>
+rectangle "Clave-Valor\nRedis\nO(1), cache, sesiones" <<kv>>
+rectangle "Columnar\nCassandra\nEscritura masiva, IoT" <<col>>
+rectangle "Grafos\nNeo4j\nRelaciones complejas" <<graph>>
+@enduml

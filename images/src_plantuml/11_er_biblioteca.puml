@@ -1,0 +1,62 @@
+@startuml 11_er_biblioteca
+skinparam linetype ortho
+
+entity "Categoria" as cat {
+  * id <<PK>>
+  --
+  nombre
+}
+
+entity "Libro" as lib {
+  * id <<PK>>
+  --
+  isbn
+  titulo
+  anio_pub
+  id_categoria <<FK>>
+}
+
+entity "Autor" as aut {
+  * id <<PK>>
+  --
+  nombre
+}
+
+entity "libro_autor" as la {
+  * id_libro <<FK>>
+  * id_autor <<FK>>
+}
+
+entity "Copia" as cop {
+  * id <<PK>>
+  --
+  id_libro <<FK>>
+  codigo
+  estado
+}
+
+entity "Socio" as soc {
+  * id <<PK>>
+  --
+  nombre
+  email
+  activo
+}
+
+entity "Prestamo" as pre {
+  * id <<PK>>
+  --
+  id_copia <<FK>>
+  id_socio <<FK>>
+  fecha_ini
+  fecha_dev
+  devuelto_en
+}
+
+cat ||--o{ lib
+lib ||--o{ la
+aut ||--o{ la
+lib ||--o{ cop
+cop ||--o{ pre
+soc ||--o{ pre
+@enduml

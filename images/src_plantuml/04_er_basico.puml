@@ -1,0 +1,37 @@
+@startuml 04_er_basico
+skinparam linetype ortho
+
+entity "Cliente" as cli {
+  * id : SERIAL <<PK>>
+  --
+  nombre : VARCHAR(100)
+  email : VARCHAR(200)
+}
+
+entity "Pedido" as ped {
+  * id : SERIAL <<PK>>
+  --
+  id_cliente : INTEGER <<FK>>
+  fecha : TIMESTAMP
+  estado : VARCHAR(20)
+}
+
+entity "Producto" as prod {
+  * id : SERIAL <<PK>>
+  --
+  nombre : VARCHAR(100)
+  precio : NUMERIC
+}
+
+entity "pedido_items" as items {
+  * id_pedido : INTEGER <<FK>>
+  * id_producto : INTEGER <<FK>>
+  --
+  cantidad : INTEGER
+  precio_unit : NUMERIC
+}
+
+cli ||--o{ ped : "realiza"
+ped ||--o{ items : "contiene"
+prod ||--o{ items : "incluido en"
+@enduml

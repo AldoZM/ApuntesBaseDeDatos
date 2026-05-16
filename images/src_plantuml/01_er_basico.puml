@@ -1,0 +1,19 @@
+@startuml 01_er_basico
+skinparam linetype ortho
+
+entity "Empleado" as emp {
+  * id : SERIAL <<PK>>
+  --
+  nombre : VARCHAR(100)
+  id_depto : INTEGER <<FK>>
+  salario : NUMERIC
+}
+
+entity "Departamento" as depto {
+  * id : SERIAL <<PK>>
+  --
+  nombre : VARCHAR(80)
+}
+
+emp }o--|| depto : "pertenece a"
+@enduml

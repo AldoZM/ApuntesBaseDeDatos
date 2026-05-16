@@ -1,0 +1,19 @@
+@startuml 07_acid_flujo
+start
+:BEGIN TRANSACTION;
+:Operacion 1 (debito);
+if (Error?) then (si)
+  :ROLLBACK;
+  stop
+else (no)
+  :Operacion 2 (credito);
+  if (Error?) then (si)
+    :ROLLBACK;
+    stop
+  else (no)
+    :COMMIT;
+    :Durabilidad: escritura en WAL;
+  endif
+endif
+stop
+@enduml
