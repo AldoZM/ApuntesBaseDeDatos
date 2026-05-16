@@ -1,0 +1,15 @@
+# LaTeX compilados
+*.aux
+*.log
+*.toc
+*.out
+*.fls
+*.fdb_latexmk
+*.synctex.gz
+main.pdf
+
+# Imágenes generadas (se regeneran con make)
+images/diagrams/*.png
+
+# PlantUML jar (usuario lo descarga)
+*.jar
