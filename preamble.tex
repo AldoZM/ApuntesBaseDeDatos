@@ -9,6 +9,7 @@
 \usepackage{listings}
 \usepackage{tcolorbox}
 \usepackage{tikz}
+\usetikzlibrary{shapes, arrows, positioning}
 \usepackage{graphicx}
 \usepackage{booktabs}
 \usepackage{enumitem}
@@ -73,7 +74,8 @@
   colframe=verdeoscu,
   fonttitle=\bfseries,
   title={[Diagrama] #1},
-  breakable
+  breakable,
+  before upper={\parskip=4pt}
 }
 
 \newtcolorbox{entrevistabox}{
@@ -90,7 +92,8 @@
   colframe=rojooscu,
   fonttitle=\bfseries,
   title={[Advertencia] #1},
-  breakable
+  breakable,
+  before upper={\parskip=4pt}
 }
 
 \newtcolorbox{tipbox}[1]{
@@ -98,7 +101,8 @@
   colframe=amarillooscu,
   fonttitle=\bfseries,
   title={[Tip] #1},
-  breakable
+  breakable,
+  before upper={\parskip=4pt}
 }
 
 % ─── Encabezados/pies ──────────────────────────────────────────────────────────
