@@ -7,6 +7,7 @@
 \newcommand{\emj}[1]{{\emojifont #1}}
 \usepackage[a4paper, top=2.5cm, bottom=2.5cm, left=3cm, right=2.5cm]{geometry}
 \usepackage{fancyhdr}
+\usepackage{titlesec}
 \usepackage{hyperref}
 \usepackage{xcolor}
 \usepackage{listings}
@@ -108,6 +109,11 @@
   breakable,
   before upper={\parskip=4pt}
 }
+
+% ─── Capítulos: reducir espacio superior ───────────────────────────────────────
+\titleformat{\chapter}[display]
+  {\normalfont\huge\bfseries}{\chaptertitlename\ \thechapter}{12pt}{\Huge}
+\titlespacing*{\chapter}{0pt}{0pt}{16pt}
 
 % ─── Encabezados/pies ──────────────────────────────────────────────────────────
 \pagestyle{fancy}
