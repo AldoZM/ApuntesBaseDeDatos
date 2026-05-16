@@ -1,24 +1,53 @@
 \chapter{Índices}
 
-\section{¿Qué es un índice?}
+\section[¿Qué es un índice?]{\emj{🧠}~¿Qué es un índice?}
 
-Estructura de datos auxiliar que acelera búsquedas a costo de espacio en disco y lentitud en escrituras (INSERT/UPDATE/DELETE deben actualizar el índice). Sin índice = Seq Scan (lectura completa). Con índice = Index Scan (O(log n)).
+Un índice es una estructura de datos auxiliar que mantiene una copia ordenada de uno o más atributos, con punteros a las filas originales.
+La analogía es el índice de un libro: en lugar de leer todo el libro para encontrar un tema, saltas directo a la página.
+Sin índice, el DBMS hace un \textbf{Seq Scan}: lee cada fila de la tabla. Con índice, hace un \textbf{Index Scan}: O(log n).
 
-\section{Tipos de índices en PostgreSQL}
+\begin{teoriabox}{Costo real de un índice}
+Un índice no es gratuito:
+\begin{itemize}
+  \item \textbf{Espacio en disco:} el índice ocupa espacio adicional (típicamente 10-30\% del tamaño de la tabla)
+  \item \textbf{Lentitud en escrituras:} cada \texttt{INSERT}, \texttt{UPDATE} o \texttt{DELETE} debe actualizar todos los índices de la tabla
+  \item \textbf{Mantenimiento:} los índices se fragmentan con el tiempo (bloat) y requieren \texttt{REINDEX} periódico
+\end{itemize}
+El trade-off es: acelera lecturas, penaliza escrituras. En tablas con muchas escrituras y pocas lecturas, un índice puede empeorar el rendimiento.
+\end{teoriabox}
+
+\section[Tipos de índices en PostgreSQL]{\emj{🧠}~Tipos de índices en PostgreSQL}
+
+PostgreSQL ofrece varios tipos de índices, cada uno optimizado para un tipo de búsqueda distinto.
+B-tree cubre el 90\% de los casos; los demás tipos resuelven necesidades específicas.
 
 \begin{itemize}
   \item \textbf{B-tree:} default. Soporta \texttt{=, <, >, BETWEEN, LIKE 'prefix\%'}. Casi siempre la elección correcta.
-  \item \textbf{Hash:} solo igualdad (\texttt{=}). Más rápido que B-tree para igualdad exacta, pero sin soporte de rango.
-  \item \textbf{GIN} (Generalized Inverted Index): búsqueda en arrays, JSONB, full-text search.
-  \item \textbf{GiST:} datos geométricos, rangos, full-text. Más versátil que GIN pero más lento.
-  \item \textbf{BRIN:} tablas muy grandes con datos correlacionados con su posición física (series de tiempo).
+  \item \textbf{Hash:} solo igualdad (\texttt{=}). Más rápido que B-tree para igualdad exacta, sin soporte de rango.
+  \item \textbf{GIN} (Generalized Inverted Index): búsqueda en arrays, JSONB, full-text search (\texttt{@@} operador).
+  \item \textbf{GiST:} datos geométricos, rangos, full-text. Más versátil que GIN pero más lento en búsqueda.
+  \item \textbf{BRIN:} tablas muy grandes con datos correlacionados con posición física (series de tiempo, logs).
 \end{itemize}
 
-\section{Cuándo crear (y no crear) un índice}
+\section[Cuándo crear (y no crear) un índice]{\emj{💡}~Cuándo crear (y no crear) un índice}
 
-Crea: columnas en \texttt{WHERE} frecuentes, FK (PostgreSQL no las indexa automáticamente), columnas en \texttt{JOIN}, columnas en \texttt{ORDER BY} con muchos registros.
+El criterio principal para crear un índice es la \textbf{selectividad}: qué fracción de la tabla retorna la condición filtro.
+Un índice en una columna booleana con 50/50 de valores no ayuda; el optimizador preferirá Seq Scan de todas formas.
 
-No creas: tablas pequeñas, columnas con baja cardinalidad (boolean, status con 3 valores), columnas que se actualizan constantemente.
+\begin{tipbox}{Reglas prácticas para índices}
+\textbf{Crea índice en:}
+\begin{itemize}
+  \item Columnas en \texttt{WHERE} con alta selectividad y consultas frecuentes
+  \item FK --- PostgreSQL \emph{no} las indexa automáticamente, a diferencia de MySQL
+  \item Columnas en \texttt{JOIN} y \texttt{ORDER BY} con muchos registros
+\end{itemize}
+\textbf{No crees índice en:}
+\begin{itemize}
+  \item Tablas pequeñas (< 1000 filas): Seq Scan es más rápido
+  \item Columnas con baja cardinalidad (boolean, status con 3 valores)
+  \item Columnas que se actualizan constantemente (costo de mantenimiento supera la ganancia)
+\end{itemize}
+\end{tipbox}
 
 \begin{lstlisting}[caption={Crear índices B-tree, parcial y compuesto}]
 -- Índice simple (B-tree por defecto)

@@ -1,38 +1,48 @@
 \chapter{Modelado UML y Diagramas ER}
 
-\section{Diagrama Entidad-Relación (ER)}
+\section[Diagrama Entidad-Relación (ER)]{\emj{🧠}~Diagrama Entidad-Relación (ER)}
 
-Modelo conceptual independiente del DBMS. Define entidades, atributos y relaciones antes de pensar en tablas.
+El modelo ER es una herramienta conceptual: permite capturar la estructura del dominio de negocio antes de pensar en tablas, tipos de datos o índices.
+Es independiente del DBMS y sirve como lenguaje común entre desarrolladores y stakeholders.
+Una vez validado el modelo ER, el paso a SQL (DDL) es casi mecánico.
+
+\begin{teoriabox}{Elementos del modelo ER}
+\begin{itemize}
+  \item \textbf{Entidad:} objeto del mundo real con existencia propia (rectángulo en Chen)
+  \item \textbf{Atributo:} propiedad de la entidad (elipse en Chen / columna en Crow's Foot)
+  \item \textbf{Relación:} asociación semántica entre entidades (rombo en Chen, línea en Crow's Foot)
+  \item \textbf{Entidad débil:} depende de otra para existir; sin PK propia, usa \textbf{llave parcial} combinada con la PK del padre
+  \item \textbf{Cardinalidad:} cuántas instancias de una entidad se relacionan con la otra (1:1, 1:N, M:N)
+\end{itemize}
+El proceso: identificar entidades → definir atributos → establecer relaciones → asignar cardinalidades → verificar con casos de uso reales.
+\end{teoriabox}
+
+\section[Notaciones]{\emj{🧠}~Notaciones}
+
+Existen varias notaciones para diagramas ER; todas expresan lo mismo con símbolos distintos.
+La notación Chen es más académica y explícita; Crow's Foot es el estándar en herramientas de producción.
 
 \begin{itemize}
-  \item \textbf{Entidad:} objeto del mundo real con existencia propia (rectángulo)
-  \item \textbf{Atributo:} propiedad de la entidad (elipse / columna en Crow's Foot)
-  \item \textbf{Relación:} asociación entre entidades (rombo en Chen, línea en Crow's Foot)
-  \item \textbf{Entidad débil:} depende de otra para existir (sin PK propia)
+  \item \textbf{Chen:} rectángulos, rombos, elipses. Académica, verbosa, mejor para aprendizaje.
+  \item \textbf{Crow's Foot:} líneas con símbolos de cardinalidad en extremos. Estándar en herramientas (Lucidchart, dbdiagram.io, DBeaver).
+  \item \textbf{UML Clases:} atributos y métodos en compartimentos. Útil cuando el modelo de datos y el de objetos son lo mismo (ORM).
 \end{itemize}
 
-\section{Notaciones}
+\section[Cardinalidad en Crow's Foot]{\emj{🧠}~Cardinalidad en Crow's Foot}
 
-\begin{itemize}
-  \item \textbf{Chen:} rectángulos, rombos, elipses. Académica, verbosa.
-  \item \textbf{Crow's Foot:} líneas con símbolos de cardinalidad en los extremos. Estándar en herramientas (Lucidchart, dbdiagram.io).
-  \item \textbf{UML Clases:} atributos y métodos en compartimentos. Útil cuando el modelo de datos y el de objetos son lo mismo.
-\end{itemize}
-
-\section{Cardinalidad en Crow's Foot}
+La notación Crow's Foot combina dos elementos en cada extremo de la línea: la \textbf{modalidad} (si la participación es obligatoria u opcional) y la \textbf{cardinalidad} (uno o muchos).
+Se leen desde el centro de la relación hacia afuera.
 
 \begin{itemize}
   \item \texttt{||} exactamente uno (obligatorio)
   \item \texttt{|o} cero o uno (opcional)
-  \item \texttt{||<} uno o muchos
-  \item \texttt{|o<} cero o muchos
+  \item \texttt{||<} uno o muchos (obligatorio)
+  \item \texttt{|o<} cero o muchos (opcional)
 \end{itemize}
 
 \begin{diagramabox}{Diagrama ER --- Cliente, Pedido, Producto}
 \begin{center}
-  % Generar con: make diagrams (requiere Java + plantuml.jar)
-  % Fuente: images/src_plantuml/04_er_basico.puml
-  \fbox{\parbox{0.7\textwidth}{\centering\vspace{1em}[Diagrama PlantUML: ejecutar \texttt{make diagrams}]\vspace{1em}}}
+  \includegraphics[width=0.85\textwidth]{images/diagrams/04_er_basico.png}
 \end{center}
 \end{diagramabox}
 

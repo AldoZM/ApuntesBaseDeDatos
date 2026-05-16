@@ -1,24 +1,49 @@
 \chapter{SQL Avanzado}
 
-\section{CTEs (Common Table Expressions)}
+\section[CTEs (Common Table Expressions)]{\emj{🧠}~CTEs (Common Table Expressions)}
 
-CTE es una consulta nombrada temporal, definida con \texttt{WITH}. Mejora legibilidad y permite recursión. Se evalúa una vez por sentencia (en PostgreSQL, materializada o no según el optimizador).
+Una CTE es una subconsulta con nombre, definida con \texttt{WITH} antes del \texttt{SELECT} principal.
+Mejora la legibilidad al reemplazar subconsultas anidadas y permite la recursión para jerarquías y grafos.
+En PostgreSQL, una CTE se materializa por defecto (se ejecuta una vez y el resultado se almacena en memoria); usar \texttt{NOT MATERIALIZED} le da al planificador más libertad de optimización.
 
 \begin{itemize}
-  \item CTE regular: alias de subconsulta, mejora legibilidad
-  \item CTE recursiva: auto-referencia para jerarquías/grafos
-  \item \texttt{MATERIALIZED} / \texttt{NOT MATERIALIZED}: hint al planificador
+  \item CTE regular: alias de subconsulta reutilizable en la misma query
+  \item CTE recursiva: auto-referencia para árboles y grafos (\texttt{WITH RECURSIVE})
+  \item \texttt{MATERIALIZED} / \texttt{NOT MATERIALIZED}: hint al planificador (PG 12+)
 \end{itemize}
 
-\section{Window Functions}
+\section[Window Functions]{\emj{🧠}~Window Functions}
 
-Operan sobre un conjunto de filas relacionadas con la fila actual (la ``ventana'') sin colapsar filas como \texttt{GROUP BY}. Sintaxis: \texttt{función() OVER (PARTITION BY ... ORDER BY ...)}.
+Las window functions operan sobre un conjunto de filas relacionadas (la ``ventana'') sin colapsar el resultado como hace \texttt{GROUP BY}.
+Cada fila del resultado conserva su identidad y accede a valores de filas vecinas.
+Son esenciales para rankings, totales acumulados y comparaciones con período anterior.
 
-Funciones más usadas: \texttt{ROW\_NUMBER()}, \texttt{RANK()}, \texttt{DENSE\_RANK()}, \texttt{LAG()}, \texttt{LEAD()}, \texttt{SUM() OVER}, \texttt{AVG() OVER}.
+\begin{teoriabox}{Anatomía de una Window Function}
+\begin{itemize}
+  \item \textbf{función():} \texttt{ROW\_NUMBER, RANK, DENSE\_RANK, LAG, LEAD, SUM, AVG}
+  \item \textbf{OVER():} define la ventana — sin argumentos, usa toda la partición
+  \item \textbf{PARTITION BY:} divide las filas en grupos independientes (como GROUP BY pero sin colapsar)
+  \item \textbf{ORDER BY:} define el orden dentro de la ventana (obligatorio para LAG/LEAD/running totals)
+  \item \textbf{ROWS/RANGE BETWEEN:} delimita cuántas filas conforman la ventana para cada fila actual
+\end{itemize}
+Diferencia \texttt{RANK} vs \texttt{DENSE\_RANK}: con empate en posición 2, \texttt{RANK} salta al 4; \texttt{DENSE\_RANK} continúa en 3.
+\end{teoriabox}
 
-\section{EXPLAIN ANALYZE}
+\section[EXPLAIN ANALYZE]{\emj{🧠}~EXPLAIN ANALYZE}
 
-\texttt{EXPLAIN} muestra el plan de ejecución; \texttt{EXPLAIN ANALYZE} lo ejecuta y muestra tiempos reales. Nodos clave: \texttt{Seq Scan} (lento en tablas grandes), \texttt{Index Scan} (usa índice), \texttt{Hash Join} vs \texttt{Nested Loop}.
+\texttt{EXPLAIN} muestra el plan de ejecución que el planificador elige sin ejecutar la query.
+\texttt{EXPLAIN ANALYZE} la ejecuta y muestra tiempos reales vs estimados.
+Leer el plan es la habilidad más importante para optimización de queries.
+
+\begin{itemize}
+  \item \textbf{Seq Scan:} lee toda la tabla — costoso en tablas grandes, normal en pequeñas
+  \item \textbf{Index Scan:} usa un índice para localizar filas — eficiente para baja selectividad
+  \item \textbf{Bitmap Index Scan:} acumula varias filas del índice antes de acceder al heap
+  \item \textbf{Hash Join:} construye hash table del lado pequeño, sondea el grande
+  \item \textbf{Nested Loop:} itera; eficiente cuando el lado interno es pequeño
+  \item \textbf{cost=inicio..total:} costo estimado en unidades arbitrarias (no segundos)
+  \item \textbf{rows:} estimación de filas; si difiere mucho de lo real, las estadísticas están desactualizadas
+\end{itemize}
 
 \begin{lstlisting}[caption={CTEs --- regular y recursiva}]
 -- CTE regular: ventas por región con total acumulado

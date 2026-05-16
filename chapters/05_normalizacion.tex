@@ -1,21 +1,46 @@
 \chapter{Normalización}
 
-\section{¿Por qué normalizar?}
+\section[¿Por qué normalizar?]{\emj{🧠}~¿Por qué normalizar?}
 
-Normalización elimina redundancia y anomalías de actualización. Una tabla desnormalizada puede tener: anomalía de inserción (no puedo insertar sin datos extras), de actualización (cambio en un lugar no se propaga) y de borrado (pierdo datos al borrar fila).
+La normalización es un proceso sistemático para eliminar redundancia de datos y anomalías de actualización.
+Una tabla desnormalizada almacena el mismo dato en múltiples filas; cuando ese dato cambia, hay que actualizarlo en todos lados o la BD queda inconsistente.
+Las tres anomalías clásicas son la señal de que el diseño necesita normalización.
 
-\section{Formas normales}
+\begin{teoriabox}{Las tres anomalías de la desnormalización}
+\begin{itemize}
+  \item \textbf{Anomalía de inserción:} no puedo registrar un departamento sin tener al menos un empleado en él
+  \item \textbf{Anomalía de actualización:} cambio el nombre del departamento en una fila pero no en las demás; ahora hay inconsistencia
+  \item \textbf{Anomalía de borrado:} al borrar al último empleado de un departamento, pierdo toda la información del departamento
+\end{itemize}
+La solución a las tres anomalías es separar entidades en sus propias tablas y usar FK para relacionarlas.
+\end{teoriabox}
+
+\section[Formas normales]{\emj{🧠}~Formas normales}
+
+Las formas normales son niveles progresivos de diseño: cada una incluye a la anterior y agrega una restricción más.
+En la práctica, 3NF es el objetivo mínimo; BCNF se alcanza en la mayoría de los diseños bien pensados de todas formas.
 
 \begin{itemize}
   \item \textbf{1NF:} valores atómicos (sin listas/arrays en celdas), sin filas duplicadas, PK definida
-  \item \textbf{2NF:} en 1NF + sin dependencias parciales (atributos dependen de toda la PK, no solo parte)
+  \item \textbf{2NF:} en 1NF + sin dependencias parciales (atributos dependen de \emph{toda} la PK compuesta, no solo parte de ella)
   \item \textbf{3NF:} en 2NF + sin dependencias transitivas (atributo no-clave no depende de otro atributo no-clave)
-  \item \textbf{BCNF:} en 3NF + todo determinante es superkey (más estricta que 3NF)
+  \item \textbf{BCNF:} en 3NF + todo determinante es superkey (cubre casos extremos que 3NF no atrapa)
 \end{itemize}
 
-\section{Dependencias funcionales}
+\begin{tipbox}{¿Hasta qué forma normalizar?}
+3NF es el estándar mínimo para bases de datos transaccionales (OLTP).
+Para bases analíticas (OLAP, data warehouses), a veces se \emph{desnormaliza} intencionalmente (star schema, snowflake) para reducir joins costosos en queries de millones de filas.
+\end{tipbox}
 
-$X \rightarrow Y$: conocer X determina Y. Si PK = \{A, B\} y $A \rightarrow C$ (C no depende de B), hay dependencia parcial → viola 2NF.
+\section[Dependencias funcionales]{\emj{🧠}~Dependencias funcionales}
+
+Una dependencia funcional $X \rightarrow Y$ significa: conocer el valor de $X$ determina unívocamente el valor de $Y$.
+Identificar dependencias funcionales es el mecanismo formal para detectar violaciones a 2NF y 3NF.
+
+\begin{itemize}
+  \item Si \textbf{PK = \{A, B\}} y existe $A \rightarrow C$ (C no depende de B) → dependencia \textbf{parcial} → viola 2NF
+  \item Si existe no-clave $\rightarrow$ no-clave (por ejemplo \texttt{id\_depto} $\rightarrow$ \texttt{nombre\_depto}) → dependencia \textbf{transitiva} → viola 3NF
+\end{itemize}
 
 \begin{lstlisting}[caption={Tabla que viola 2NF y su corrección}]
 -- VIOLA 2NF: PK=(id_pedido, id_producto) pero nombre_producto

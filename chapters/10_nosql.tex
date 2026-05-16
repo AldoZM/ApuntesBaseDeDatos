@@ -1,27 +1,51 @@
 \chapter{Bases de Datos NoSQL}
 
-\section{¿Cuándo NoSQL?}
+\section[¿Cuándo NoSQL?]{\emj{🧠}~¿Cuándo NoSQL?}
 
-SQL es la elección default. NoSQL cuando: esquema cambia frecuentemente, se requiere escalado horizontal masivo, el modelo de datos es inherentemente no relacional, o la latencia de lectura es crítica.
+SQL (relacional) es la elección por defecto y cubre la mayoría de los casos.
+NoSQL surge para resolver limitaciones específicas: esquemas rígidos, escalado vertical costoso o modelos de datos que no encajan bien en tablas.
+La elección no es binaria: muchos sistemas usan ambos (polyglot persistence).
 
-\section{Tipos y cuándo usar cada uno}
+\begin{teoriabox}{¿Cuándo considerar NoSQL?}
+\begin{itemize}
+  \item El esquema varía significativamente entre registros del mismo tipo (catálogos de productos con atributos diferentes por categoría)
+  \item Se requiere escalado horizontal masivo de escritura que un RDBMS no puede satisfacer verticalmente
+  \item El modelo de datos es inherentemente no relacional: grafos de relaciones sociales, documentos JSON anidados, streams de eventos
+  \item La latencia de lectura es crítica y los joins son el cuello de botella (cachés con Redis)
+\end{itemize}
+Lo que NoSQL \emph{no} resuelve: integridad referencial, transacciones complejas entre múltiples entidades, queries ad-hoc arbitrarias.
+\end{teoriabox}
+
+\section[Tipos y cuándo usar cada uno]{\emj{🧠}~Tipos y cuándo usar cada uno}
+
+Cada tipo de NoSQL está optimizado para un patrón de acceso específico.
+Elegir el tipo incorrecto puede resultar en peor rendimiento que un RDBMS.
 
 \begin{itemize}
   \item \textbf{Documental (MongoDB):} catálogos de productos, CMS, datos con estructura variable por documento
-  \item \textbf{Clave-valor (Redis):} caché, sesiones, colas, contadores en tiempo real
+  \item \textbf{Clave-valor (Redis):} caché, sesiones, colas, contadores en tiempo real, pub/sub
   \item \textbf{Columnar (Cassandra):} series de tiempo, logs, IoT --- escritura masiva y consulta por clave de partición
-  \item \textbf{Grafos (Neo4j):} redes sociales, detección de fraude, recomendaciones --- cuando las relaciones son el dato
+  \item \textbf{Grafos (Neo4j):} redes sociales, detección de fraude, recomendaciones --- cuando las relaciones \emph{son} el dato
 \end{itemize}
 
-\section{Teorema CAP}
+\section[Teorema CAP]{\emj{🧠}~Teorema CAP}
 
-Sistema distribuido puede garantizar solo 2 de 3: Consistencia, Disponibilidad, Tolerancia a particiones.
+El teorema CAP (Brewer, 2000) establece que un sistema distribuido no puede garantizar simultáneamente las tres propiedades: debe sacrificar una durante una partición de red.
+Es una guía para entender trade-offs, no una ley rígida: los sistemas modernos ofrecen tunabilidad entre consistencia y disponibilidad.
 
 \begin{itemize}
-  \item \textbf{CP:} MongoDB, HBase --- prefiere consistencia sobre disponibilidad
-  \item \textbf{AP:} Cassandra, DynamoDB --- prefiere disponibilidad; consistencia eventual
-  \item \textbf{CA:} solo sistemas no distribuidos (RDBMS tradicional en un nodo)
+  \item \textbf{C} (Consistency): todos los nodos ven los mismos datos al mismo tiempo
+  \item \textbf{A} (Availability): el sistema siempre responde (puede ser con datos desactualizados)
+  \item \textbf{P} (Partition tolerance): el sistema sigue funcionando aunque haya fallas de red entre nodos
 \end{itemize}
+
+\begin{tipbox}{CAP y bases de datos reales}
+\begin{itemize}
+  \item \textbf{CP} (Consistency + Partition): MongoDB, HBase, ZooKeeper --- prefieren consistencia, pueden rechazar requests durante partición
+  \item \textbf{AP} (Availability + Partition): Cassandra, DynamoDB, CouchDB --- siempre responden, con \emph{consistencia eventual}
+  \item \textbf{CA} (Consistency + Availability): solo sistemas no distribuidos (RDBMS en un solo nodo). En la práctica, P siempre está presente en redes reales.
+\end{itemize}
+\end{tipbox}
 
 \begin{lstlisting}[language=, caption={MongoDB --- CRUD básico}]
 // Insertar documento

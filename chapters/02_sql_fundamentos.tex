@@ -1,30 +1,47 @@
 \chapter{SQL Fundamentos}
 
-\section{Sublanguages SQL}
+\section[Sublanguages SQL]{\emj{🧠}~Sublanguages SQL}
 
-SQL se divide en cuatro sublanguages según el tipo de operación:
+SQL es un lenguaje declarativo: describes \emph{qué} quieres, no \emph{cómo} obtenerlo.
+El motor decide el plan de ejecución óptimo.
+Se divide en cinco sublanguages según el tipo de operación:
 
+\begin{teoriabox}{Los cinco sublanguages}
 \begin{itemize}
-  \item \textbf{DDL} (Data Definition Language): \texttt{CREATE, ALTER, DROP, TRUNCATE}
-  \item \textbf{DML} (Data Manipulation Language): \texttt{INSERT, UPDATE, DELETE}
-  \item \textbf{DQL} (Data Query Language): \texttt{SELECT}
-  \item \textbf{DCL} (Data Control Language): \texttt{GRANT, REVOKE}
-  \item \textbf{TCL} (Transaction Control): \texttt{BEGIN, COMMIT, ROLLBACK, SAVEPOINT}
+  \item \textbf{DDL} (Data Definition Language): estructura — \texttt{CREATE, ALTER, DROP, TRUNCATE}
+  \item \textbf{DML} (Data Manipulation Language): datos — \texttt{INSERT, UPDATE, DELETE}
+  \item \textbf{DQL} (Data Query Language): consultas — \texttt{SELECT}
+  \item \textbf{DCL} (Data Control Language): permisos — \texttt{GRANT, REVOKE}
+  \item \textbf{TCL} (Transaction Control): transacciones — \texttt{BEGIN, COMMIT, ROLLBACK, SAVEPOINT}
 \end{itemize}
+DDL es auto-commit en la mayoría de los DBMS: un \texttt{DROP TABLE} no puede hacerse \texttt{ROLLBACK} una vez ejecutado (excepto en PostgreSQL, donde DDL sí es transaccional).
+\end{teoriabox}
 
-\section{DDL --- definir estructura}
+\section[DDL --- definir estructura]{\emj{🧠}~DDL --- definir estructura}
+
+El DDL define el esquema: qué tablas existen, qué columnas tienen y qué constraints las gobiernan.
+Los constraints se pueden definir inline (junto a la columna) o como constraints de tabla separados.
+\texttt{TRUNCATE} es más rápido que \texttt{DELETE} porque no genera undo log fila por fila, pero no puede ser filtrado con \texttt{WHERE}.
 
 \begin{itemize}
   \item \texttt{CREATE TABLE} define el esquema; constraints inline o separados
-  \item \texttt{ALTER TABLE} modifica columnas, agrega/quita constraints
+  \item \texttt{ALTER TABLE} modifica columnas, agrega/quita constraints sin recrear la tabla
   \item \texttt{TRUNCATE} vacía la tabla rápido (no dispara triggers fila por fila)
   \item \texttt{DROP} elimina objeto permanentemente --- irreversible fuera de transacción
 \end{itemize}
 
-\section{DML + DQL --- manipular y consultar}
+\section[DML + DQL --- manipular y consultar]{\emj{🧠}~DML + DQL --- manipular y consultar}
 
-Orden lógico de evaluación de \texttt{SELECT}:
+\texttt{SELECT} es el comando más complejo de SQL.
+Su orden de escritura no es el orden de evaluación:
+se escribe \texttt{SELECT} primero pero se evalúa casi al último.
+Entender este orden es clave para saber qué puedes referenciar en cada cláusula.
+
+\begin{tipbox}{Orden lógico de evaluación de SELECT}
 \texttt{FROM} → \texttt{JOIN} → \texttt{WHERE} → \texttt{GROUP BY} → \texttt{HAVING} → \texttt{SELECT} → \texttt{ORDER BY} → \texttt{LIMIT}
+
+Por eso no puedes usar un alias definido en \texttt{SELECT} dentro de \texttt{WHERE}: \texttt{WHERE} se evalúa antes de \texttt{SELECT}.
+\end{tipbox}
 
 \begin{lstlisting}[caption={DDL: CREATE, ALTER, DROP}]
 -- Crear tabla con constraints

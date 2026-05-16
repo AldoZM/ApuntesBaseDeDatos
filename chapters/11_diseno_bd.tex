@@ -1,35 +1,44 @@
 \chapter{Diseño de Base de Datos --- Caso Práctico}
 
-\section{Proceso de diseño}
+\section[Proceso de diseño]{\emj{🧠}~Proceso de diseño}
 
+El diseño de una base de datos es un proceso iterativo con fases bien definidas.
+Saltarse las etapas conceptuales e ir directamente al DDL produce esquemas que son difíciles de mantener, escalar y corregir.
+Un buen diseño se valida con casos de uso reales antes de escribir una sola línea de SQL.
+
+\begin{teoriabox}{Las seis fases del diseño}
 \begin{enumerate}
-  \item Recopilar requisitos (entrevistas con stakeholders)
-  \item Modelo conceptual (ER / UML)
-  \item Modelo lógico (tablas, atributos, tipos, FK)
-  \item Normalización (3NF mínimo)
-  \item Modelo físico (índices, particiones, tipos específicos del DBMS)
-  \item Revisión de rendimiento (EXPLAIN, pruebas de carga)
+  \item \textbf{Requisitos:} entrevistas con stakeholders --- ¿qué datos necesitan almacenar? ¿qué consultas harán?
+  \item \textbf{Modelo conceptual:} diagrama ER/UML --- entidades, atributos, relaciones (independiente del DBMS)
+  \item \textbf{Modelo lógico:} traducir ER a tablas, definir tipos de datos, PK/FK, constraints
+  \item \textbf{Normalización:} aplicar 3NF mínimo; eliminar redundancias y anomalías
+  \item \textbf{Modelo físico:} índices, particionamiento, tipos específicos del DBMS (JSONB, arrays)
+  \item \textbf{Revisión de rendimiento:} EXPLAIN ANALYZE, pruebas de carga con datos realistas
 \end{enumerate}
+El modelo conceptual y lógico son agnósticos al motor; el modelo físico depende del DBMS elegido.
+\end{teoriabox}
 
-\section{Caso: Sistema de Biblioteca}
+\section[Caso: Sistema de Biblioteca]{\emj{🧠}~Caso: Sistema de Biblioteca}
+
+Ejemplo completo: desde requisitos hasta DDL optimizado.
 
 \textbf{Requisitos:} registrar libros, copias físicas, socios, préstamos y devoluciones.
+Una copia puede prestarse y devolverse múltiples veces a lo largo del tiempo.
+Un libro puede tener varios autores; un autor puede haber escrito varios libros.
 
-Entidades: \texttt{Libro}, \texttt{Copia}, \texttt{Socio}, \texttt{Prestamo}, \texttt{Autor}, \texttt{Categoria}.
+Entidades identificadas: \texttt{Libro}, \texttt{Copia}, \texttt{Socio}, \texttt{Prestamo}, \texttt{Autor}, \texttt{Categoria}.
 
 Relaciones clave:
 \begin{itemize}
-  \item Libro tiene muchas Copias (1:N)
-  \item Libro tiene muchos Autores (M:N via \texttt{libro\_autor})
+  \item Libro tiene muchas Copias físicas (1:N) --- un libro puede existir en varios ejemplares
+  \item Libro tiene muchos Autores (M:N via tabla intermedia \texttt{libro\_autor})
   \item Copia puede estar en muchos Préstamos a lo largo del tiempo (1:N)
   \item Socio tiene muchos Préstamos (1:N)
 \end{itemize}
 
 \begin{diagramabox}{ER --- Sistema Biblioteca}
 \begin{center}
-  % Generar con: make diagrams (requiere Java + plantuml.jar)
-  % Fuente: images/src_plantuml/11_er_biblioteca.puml
-  \fbox{\parbox{0.7\textwidth}{\centering\vspace{1em}[Diagrama PlantUML: ejecutar \texttt{make diagrams}]\vspace{1em}}}
+  \includegraphics[width=0.85\textwidth]{images/diagrams/11_er_biblioteca.png}
 \end{center}
 \end{diagramabox}
 

@@ -1,31 +1,52 @@
 \chapter{PostgreSQL --- Características Avanzadas}
 
-\section{Por qué PostgreSQL}
+\section[Por qué PostgreSQL]{\emj{🧠}~Por qué PostgreSQL}
 
-RDBMS open source más avanzado. Extensible mediante extensiones, soporta JSON como ciudadano de primera clase, herencia de tablas, tipos custom, y tiene MVCC robusto.
+PostgreSQL es el RDBMS open source más completo y conforme al estándar SQL.
+A diferencia de MySQL, es extensible por diseño: cualquiera puede agregar tipos de dato, operadores, funciones y métodos de acceso mediante extensiones.
+Su MVCC robusto, soporte nativo de JSON, y herramientas de administración maduras lo hacen la primera opción para aplicaciones nuevas.
+
+\begin{teoriabox}{Arquitectura de PostgreSQL}
+\begin{itemize}
+  \item \textbf{Proceso postmaster:} proceso padre que gestiona conexiones; cada cliente obtiene su propio proceso hijo
+  \item \textbf{WAL (Write-Ahead Log):} todos los cambios se escriben al log antes de modificar los datos; garantiza durabilidad y permite PITR
+  \item \textbf{MVCC:} cada fila tiene versiones; lecturas ven el snapshot de su transacción sin bloquear escrituras
+  \item \textbf{Shared Buffer Cache:} pool de memoria compartida para páginas de disco; \texttt{shared\_buffers} controla su tamaño (típico: 25\% de RAM)
+  \item \textbf{Autovacuum:} proceso en background que recicla versiones muertas de filas (generadas por MVCC)
+\end{itemize}
+\end{teoriabox}
 
 \begin{itemize}
-  \item JSONB: JSON binario indexable (vs JSON texto sin índice)
-  \item Extensiones: PostGIS (geo), pg\_trgm (trigrams), uuid-ossp, pgcrypto
-  \item VACUUM: recupera espacio de filas muertas (MVCC genera versiones viejas)
-  \item Roles: sistema de permisos basado en roles, no usuarios individuales
-  \item Particionamiento nativo: RANGE, LIST, HASH
+  \item JSONB: JSON binario indexable (vs JSON texto, que no puede usar índices GIN)
+  \item Extensiones: PostGIS (geo), pg\_trgm (trigrams/búsqueda difusa), uuid-ossp, pgcrypto
+  \item VACUUM: recupera espacio de filas muertas que deja el MVCC
+  \item Roles: sistema de permisos basado en roles heredables, no usuarios individuales
+  \item Particionamiento nativo: RANGE, LIST, HASH (PG 10+)
 \end{itemize}
 
-\section{JSONB}
+\section[JSONB]{\emj{🧠}~JSONB}
 
-Almacena JSON en formato binario. Soporta índices GIN, operadores \texttt{->}, \texttt{->>}, \texttt{@>}, \texttt{?}.
+JSONB almacena JSON en formato binario descompuesto: lo parsea al insertar y guarda la estructura interna.
+Esto permite índices GIN y operadores de búsqueda que JSON texto no soporta.
+Usar JSONB cuando el dato es inherentemente semiestructurado; no como sustituto de columnas relacionales bien definidas.
 
 \begin{itemize}
-  \item \texttt{->} devuelve JSON (objeto/array)
-  \item \texttt{->>} devuelve texto
-  \item \texttt{@>} contiene (compatible con índice GIN)
-  \item \texttt{?} tiene la clave
+  \item \texttt{->} devuelve JSON (objeto/array) --- útil para extraer subobjetos
+  \item \texttt{->>} devuelve texto --- para comparaciones con \texttt{WHERE}
+  \item \texttt{@>} contiene (compatible con índice GIN) --- operador más importante
+  \item \texttt{?} tiene la clave --- verificar existencia sin importar el valor
 \end{itemize}
 
-\section{VACUUM y mantenimiento}
+\section[VACUUM y mantenimiento]{\emj{🧠}~VACUUM y mantenimiento}
 
-VACUUM recupera espacio de tuplas muertas. AUTOVACUUM lo hace automáticamente. VACUUM ANALYZE actualiza estadísticas del planificador. VACUUM FULL bloquea la tabla (evitar en producción).
+El MVCC de PostgreSQL crea \emph{versiones muertas} de filas al hacer \texttt{UPDATE} o \texttt{DELETE}: la fila antigua queda en el heap pero invisible para nuevas transacciones.
+VACUUM recupera ese espacio. Sin VACUUM periódico, la tabla crece indefinidamente (table bloat) y el planificador trabaja con estadísticas desactualizadas.
+
+\begin{warningbox}{VACUUM FULL en producción}
+\texttt{VACUUM FULL} compacta la tabla reescribiéndola desde cero, liberando el espacio al SO.
+El problema: bloquea la tabla con un lock exclusivo durante todo el proceso.
+En producción, prefiere \texttt{VACUUM} regular (que solo marca espacio como reutilizable sin bloquear) y reserva \texttt{VACUUM FULL} para ventanas de mantenimiento planificadas.
+\end{warningbox}
 
 \begin{lstlisting}[caption={JSONB --- consultas y operadores}]
 CREATE TABLE eventos (

@@ -1,28 +1,44 @@
 \chapter{MySQL / MariaDB}
 
-\section{InnoDB vs MyISAM}
+\section[InnoDB vs MyISAM]{\emj{🧠}~InnoDB vs MyISAM}
 
-InnoDB es el motor default desde MySQL 5.5. MyISAM es legado --- sin transacciones, sin FK.
+MySQL históricamente separaba el servidor del motor de almacenamiento.
+InnoDB es el motor transaccional; MyISAM es el motor legado sin transacciones.
+Desde MySQL 5.5 (2010), InnoDB es el motor por defecto y la elección correcta en la práctica totalidad de los casos.
+
+\begin{teoriabox}{InnoDB vs MyISAM: diferencias clave}
+\begin{itemize}
+  \item \textbf{InnoDB:} ACID completo, FK enforced, row-level locking, MVCC, crash recovery automático
+  \item \textbf{MyISAM:} sin transacciones, sin FK, table-level lock (bloquea toda la tabla por escritura), crash recovery manual
+  \item \textbf{Rendimiento:} MyISAM puede ser más rápido en lecturas puras de bulk (sin concurrencia), pero InnoDB supera en cualquier escenario real con escrituras concurrentes
+  \item \textbf{Regla práctica:} usa siempre InnoDB. MyISAM solo aparece en sistemas heredados o tablas temporales de solo lectura con volumen extremo.
+\end{itemize}
+\end{teoriabox}
+
+\section[Diferencias clave con PostgreSQL]{\emj{🧠}~Diferencias clave con PostgreSQL}
+
+MySQL y PostgreSQL comparten el estándar SQL pero difieren en sintaxis, semántica y características.
+Conocer las diferencias es crítico al migrar entre motores o trabajar en proyectos mixtos.
 
 \begin{itemize}
-  \item \textbf{InnoDB:} ACID, FK, row-level locking, MVCC, crash recovery
-  \item \textbf{MyISAM:} más rápido en lecturas puras, sin transacciones, table-level lock
-  \item Siempre usa InnoDB en producción. MyISAM solo para tablas de solo lectura con volumen extremo.
+  \item \texttt{AUTO\_INCREMENT} (MySQL) vs \texttt{SERIAL} / \texttt{GENERATED ALWAYS AS IDENTITY} (PG)
+  \item MySQL no tiene \texttt{RETURNING} en \texttt{INSERT}/\texttt{UPDATE}; PostgreSQL sí
+  \item \texttt{GROUP BY} en MySQL es más permisivo con \texttt{ONLY\_FULL\_GROUP\_BY} desactivado (comportamiento peligroso)
+  \item MySQL usa \texttt{SHOW PROCESSLIST}, \texttt{SHOW STATUS} para monitoreo; PG usa \texttt{pg\_stat\_activity}
+  \item Replicación master-replica nativa vía binlog en MySQL; PG usa WAL streaming replication
+  \item MySQL tiene \texttt{ON DUPLICATE KEY UPDATE} para upserts; PG usa \texttt{INSERT ... ON CONFLICT}
 \end{itemize}
 
-\section{Diferencias clave con PostgreSQL}
+\section[Particionamiento]{\emj{🧠}~Particionamiento}
 
-\begin{itemize}
-  \item \texttt{AUTO\_INCREMENT} vs \texttt{SERIAL} (PG)
-  \item No tiene \texttt{RETURNING} en INSERT/UPDATE
-  \item \texttt{GROUP BY} más permisivo (columnas no agregadas sin ONLY\_FULL\_GROUP\_BY)
-  \item \texttt{SHOW PROCESSLIST}, \texttt{SHOW STATUS} para monitoreo
-  \item Replicación master-slave nativa (binlog)
-\end{itemize}
+El particionamiento divide físicamente una tabla lógica en subtablas según un criterio.
+Mejora rendimiento cuando las queries filtran por la columna de partición (partition pruning): el motor lee solo las particiones relevantes.
 
-\section{Particionamiento}
-
-Divide tabla en particiones físicas. Tipos: RANGE, LIST, HASH, KEY. Mejora rendimiento en tablas grandes cuando las queries filtran por la columna de partición.
+\begin{tipbox}{Partition Pruning}
+Si la columna de partición está en el \texttt{WHERE}, MySQL descarta particiones automáticamente.
+\texttt{EXPLAIN} mostrará \texttt{partitions: p2023} en lugar de leer toda la tabla.
+Sin la columna de partición en el filtro, se leen \emph{todas} las particiones --- peor que sin particionamiento.
+\end{tipbox}
 
 \begin{lstlisting}[caption={Sintaxis MySQL --- diferencias con PostgreSQL}]
 -- AUTO_INCREMENT (MySQL) vs SERIAL (PostgreSQL)

@@ -1,33 +1,55 @@
 \chapter{Modelo Relacional}
 
-\section{Conceptos fundamentales}
+\section[Conceptos fundamentales]{\emj{🧠}~Conceptos fundamentales}
 
-El modelo relacional representa datos como tablas (relaciones). Cada fila es una tupla única; cada columna es un atributo con dominio definido. Las relaciones entre tablas se expresan mediante llaves.
+El modelo relacional, propuesto por E.F.~Codd en 1970, representa datos como tablas (relaciones matemáticas).
+Cada fila es una tupla única; cada columna es un atributo con dominio definido.
+Las relaciones entre tablas se expresan mediante llaves, no mediante punteros físicos.
 
+\begin{teoriabox}{Terminología formal vs coloquial}
 \begin{itemize}
-  \item \textbf{Relación:} tabla con nombre único en el esquema
-  \item \textbf{Tupla:} fila --- instancia de la entidad
-  \item \textbf{Atributo:} columna con tipo de dato fijo
-  \item \textbf{Dominio:} conjunto de valores válidos para un atributo
-  \item \textbf{Grado:} número de atributos (columnas)
-  \item \textbf{Cardinalidad:} número de tuplas (filas)
+  \item \textbf{Relación} (formal) = \textbf{tabla} (coloquial)
+  \item \textbf{Tupla} (formal) = \textbf{fila / registro}
+  \item \textbf{Atributo} (formal) = \textbf{columna / campo} con tipo de dato fijo
+  \item \textbf{Dominio:} conjunto de valores válidos para un atributo (ej.~enteros positivos)
+  \item \textbf{Grado:} número de atributos (columnas) de la relación
+  \item \textbf{Cardinalidad:} número de tuplas (filas) actuales en la relación
 \end{itemize}
+La fortaleza del modelo relacional es su independencia física: el motor puede cambiar cómo almacena los datos sin afectar las consultas SQL.
+\end{teoriabox}
 
-\section{Llaves}
+\section[Llaves]{\emj{🧠}~Llaves}
+
+Las llaves son el mecanismo de identificación y relación entre tablas.
+Una tabla bien diseñada siempre tiene una PK definida; las FK crean el grafo de relaciones del esquema.
+Elegir entre surrogate y natural key afecta rendimiento, legibilidad y mantenimiento a largo plazo.
 
 \begin{itemize}
   \item \textbf{Superkey:} conjunto de atributos que identifica tuplas únicamente
   \item \textbf{Candidate key:} superkey mínima (sin atributos redundantes)
-  \item \textbf{Primary Key (PK):} candidate key elegida; NOT NULL + UNIQUE
+  \item \textbf{Primary Key (PK):} candidate key elegida; NOT NULL + UNIQUE garantizados
   \item \textbf{Foreign Key (FK):} atributo que referencia la PK de otra tabla
   \item \textbf{Surrogate key:} PK artificial (SERIAL/UUID) sin significado de negocio
-  \item \textbf{Natural key:} PK con significado de negocio (RFC, email)
+  \item \textbf{Natural key:} PK con significado de negocio (RFC, email, CURP)
 \end{itemize}
 
-\section{Integridad referencial}
+\begin{tipbox}{Surrogate vs Natural Key}
+Prefiere surrogate keys (SERIAL/UUID) para tablas con relaciones: son inmutables, sin significado de negocio que cambie y más eficientes en joins.
+Usa natural keys solo cuando el atributo es \emph{verdaderamente} estable y único (ej. ISBN de un libro, código IATA de un aeropuerto).
+\end{tipbox}
 
-FK debe apuntar a un valor que existe en la tabla referenciada, o ser NULL si se permite.
-Acciones ante DELETE/UPDATE en tabla padre: \texttt{CASCADE}, \texttt{SET NULL}, \texttt{RESTRICT}, \texttt{NO ACTION}.
+\section[Integridad referencial]{\emj{🧠}~Integridad referencial}
+
+La integridad referencial garantiza que una FK siempre apunte a un registro que existe en la tabla padre, o sea NULL si está permitido.
+Sin FK enforced, es posible tener huérfanos: órdenes sin cliente, facturas sin producto.
+El DBMS rechaza operaciones que violen la restricción.
+
+Las acciones \texttt{ON DELETE} / \texttt{ON UPDATE} definen qué pasa con los hijos cuando cambia el padre:
+\begin{itemize}
+  \item \textbf{CASCADE:} propaga el cambio a los hijos automáticamente
+  \item \textbf{SET NULL:} pone NULL en la FK del hijo (la columna debe admitir NULL)
+  \item \textbf{RESTRICT / NO ACTION:} rechaza la operación si existen hijos (default)
+\end{itemize}
 
 \begin{lstlisting}[caption={PK, FK e integridad referencial}]
 CREATE TABLE departamentos (

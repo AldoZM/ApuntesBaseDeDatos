@@ -1,29 +1,52 @@
 \chapter{Transacciones y Control de Concurrencia}
 
-\section{ACID}
+\section[ACID]{\emj{🧠}~ACID}
 
-Las 4 propiedades que garantizan que las transacciones son confiables:
+Una transacción es un conjunto de operaciones que se ejecutan como una unidad indivisible.
+ACID es el conjunto de propiedades que garantizan que las transacciones son confiables incluso ante fallos del sistema o acceso concurrente.
+Estas propiedades son el fundamento de cualquier sistema financiero, de inventario o de misión crítica.
+
+\begin{teoriabox}{ACID explicado con transferencia bancaria}
+Transferir \$1000 de la cuenta A a la cuenta B involucra dos operaciones:
+(1) restar \$1000 de A y (2) sumar \$1000 a B.
 
 \begin{itemize}
-  \item \textbf{Atomicidad:} todo o nada --- si falla un paso, se revierten todos
-  \item \textbf{Consistencia:} la BD pasa de un estado válido a otro válido (constraints se respetan)
-  \item \textbf{Aislamiento:} transacciones concurrentes no se ven entre sí hasta hacer commit
-  \item \textbf{Durabilidad:} tras commit, los cambios persisten aunque el servidor se caiga (WAL)
+  \item \textbf{Atomicidad:} si el sistema falla entre (1) y (2), se revierten ambas. Nunca el dinero desaparece ``a la mitad''.
+  \item \textbf{Consistencia:} la suma total del dinero en el sistema es la misma antes y después. Los constraints (saldo $\geq 0$) se respetan.
+  \item \textbf{Aislamiento:} otra transacción que consulte el saldo de A durante la transferencia no ve el estado intermedio.
+  \item \textbf{Durabilidad:} una vez que el COMMIT se confirma, los cambios persisten aunque el servidor se apague inmediatamente después (gracias al WAL).
 \end{itemize}
+\end{teoriabox}
 
-\section{Niveles de aislamiento}
+\section[Niveles de aislamiento]{\emj{🧠}~Niveles de aislamiento}
 
-De menor a mayor aislamiento (PostgreSQL):
+El aislamiento tiene un costo: mayor aislamiento implica más locks y menor concurrencia.
+El estándar SQL define cuatro niveles; PostgreSQL implementa tres efectivos (Read Uncommitted se comporta como Read Committed).
+
 \begin{itemize}
   \item \textbf{Read Uncommitted:} no existe en PG (se comporta como Read Committed)
-  \item \textbf{Read Committed:} default en PG. Ve solo commits. Sujeto a non-repeatable reads.
-  \item \textbf{Repeatable Read:} misma fila devuelve mismo valor en toda la transacción.
-  \item \textbf{Serializable:} aislamiento total. Más lento, detecta anomalías serializables.
+  \item \textbf{Read Committed:} default en PG. Ve solo datos confirmados. Sujeto a \emph{non-repeatable reads}.
+  \item \textbf{Repeatable Read:} la misma fila devuelve el mismo valor en toda la transacción. Previene non-repeatable reads.
+  \item \textbf{Serializable:} aislamiento total equivalente a ejecución serial. Más lento; detecta anomalías serializables.
 \end{itemize}
 
-\section{Locks y Deadlocks}
+\begin{tipbox}{¿Qué nivel usar?}
+\textbf{Read Committed} cubre el 95\% de los casos.
+Usa \textbf{Repeatable Read} cuando una transacción hace múltiples lecturas de los mismos datos y necesita consistencia (reportes financieros).
+Usa \textbf{Serializable} solo cuando la correctitud lógica lo exija; tiene overhead significativo.
+\end{tipbox}
 
-PostgreSQL usa MVCC: lecturas no bloquean escrituras. Locks explícitos con \texttt{LOCK TABLE} o \texttt{SELECT FOR UPDATE}. Deadlock ocurre cuando A espera a B y B espera a A; PostgreSQL lo detecta y aborta una de las transacciones.
+\section[Locks y Deadlocks]{\emj{🧠}~Locks y Deadlocks}
+
+PostgreSQL usa MVCC (Multi-Version Concurrency Control): las lecturas nunca bloquean escrituras y las escrituras nunca bloquean lecturas.
+Cada transacción ve un snapshot consistente de la BD al momento de inicio.
+Los deadlocks ocurren cuando dos transacciones se esperan mutuamente; PostgreSQL los detecta y aborta la más joven.
+
+\begin{warningbox}{Deadlocks y cómo prevenirlos}
+El deadlock clásico: T1 bloquea fila A y espera la B; T2 bloquea fila B y espera la A.
+Prevención: acceder siempre a los recursos en el \textbf{mismo orden} en todas las transacciones.
+Si T1 y T2 siempre bloquean A antes que B, el deadlock es imposible.
+\end{warningbox}
 
 \begin{lstlisting}[caption={BEGIN, COMMIT, ROLLBACK, SAVEPOINT}]
 BEGIN;
