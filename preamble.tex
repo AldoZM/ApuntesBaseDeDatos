@@ -1,0 +1,120 @@
+% preamble.tex
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[spanish]{babel}
+\usepackage[a4paper, top=2.5cm, bottom=2.5cm, left=3cm, right=2.5cm]{geometry}
+\usepackage{fancyhdr}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{tcolorbox}
+\usepackage{tikz}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{enumitem}
+\usepackage{parskip}
+
+\tcbuselibrary{skins, breakable, listings}
+
+% ─── Colores ───────────────────────────────────────────────────────────────────
+\definecolor{azulclaro}{RGB}{219, 234, 254}
+\definecolor{azuloscu}{RGB}{30, 64, 175}
+\definecolor{grisclaro}{RGB}{243, 244, 246}
+\definecolor{grisoscu}{RGB}{55, 65, 81}
+\definecolor{verdeclaro}{RGB}{209, 250, 229}
+\definecolor{verdeoscu}{RGB}{6, 95, 70}
+\definecolor{naranjaclar}{RGB}{255, 237, 213}
+\definecolor{naranjaoscu}{RGB}{154, 52, 18}
+\definecolor{rojoclaro}{RGB}{254, 226, 226}
+\definecolor{rojooscu}{RGB}{153, 27, 27}
+\definecolor{amarilloclaro}{RGB}{254, 249, 195}
+\definecolor{amarillooscu}{RGB}{113, 63, 18}
+\definecolor{sqlkeyword}{RGB}{37, 99, 235}
+\definecolor{sqlcomment}{RGB}{107, 114, 128}
+\definecolor{sqlstring}{RGB}{22, 163, 74}
+
+% ─── Listings SQL ──────────────────────────────────────────────────────────────
+\lstdefinestyle{sql}{
+  language=SQL,
+  basicstyle=\ttfamily\small,
+  keywordstyle=\color{sqlkeyword}\bfseries,
+  commentstyle=\color{sqlcomment}\itshape,
+  stringstyle=\color{sqlstring},
+  showstringspaces=false,
+  breaklines=true,
+  frame=single,
+  framerule=0.5pt,
+  rulecolor=\color{grisoscu},
+  backgroundcolor=\color{grisclaro},
+  numbers=left,
+  numberstyle=\tiny\color{sqlcomment},
+  numbersep=8pt,
+  tabsize=2,
+  morekeywords={SERIAL, RETURNING, EXPLAIN, ANALYZE, VACUUM, CONCURRENTLY,
+                JSONB, GIN, GIST, ILIKE, SIMILAR, LATERAL, WITHIN, FILTER,
+                OVER, PARTITION, ROWS, RANGE, PRECEDING, FOLLOWING,
+                UNBOUNDED, CURRENT, ROW, NULLS, FIRST, LAST,
+                MATERIALIZED, RECURSIVE, INCLUDE, EXCLUDE},
+}
+\lstset{style=sql}
+
+% ─── tcolorbox styles ──────────────────────────────────────────────────────────
+\newtcolorbox{teoriabox}[1]{
+  colback=azulclaro,
+  colframe=azuloscu,
+  fonttitle=\bfseries,
+  title={[Teoria] #1},
+  breakable,
+  before upper={\parskip=4pt}
+}
+
+\newtcolorbox{diagramabox}[1]{
+  colback=verdeclaro,
+  colframe=verdeoscu,
+  fonttitle=\bfseries,
+  title={[Diagrama] #1},
+  breakable
+}
+
+\newtcolorbox{entrevistabox}{
+  colback=naranjaclar,
+  colframe=naranjaoscu,
+  fonttitle=\bfseries,
+  title={[Entrevista] Preguntas tipicas},
+  breakable,
+  before upper={\parskip=4pt}
+}
+
+\newtcolorbox{warningbox}[1]{
+  colback=rojoclaro,
+  colframe=rojooscu,
+  fonttitle=\bfseries,
+  title={[Advertencia] #1},
+  breakable
+}
+
+\newtcolorbox{tipbox}[1]{
+  colback=amarilloclaro,
+  colframe=amarillooscu,
+  fonttitle=\bfseries,
+  title={[Tip] #1},
+  breakable
+}
+
+% ─── Encabezados/pies ──────────────────────────────────────────────────────────
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[LE,RO]{\thepage}
+\fancyhead[LO]{\nouppercase{\rightmark}}
+\fancyhead[RE]{\nouppercase{\leftmark}}
+\renewcommand{\headrulewidth}{0.4pt}
+
+% ─── Hyperref ──────────────────────────────────────────────────────────────────
+\hypersetup{
+  colorlinks=true,
+  linkcolor=azuloscu,
+  urlcolor=verdeoscu,
+  citecolor=grisoscu,
+  pdftitle={Apuntes DBA},
+  pdfauthor={Aldo Zetina Muci\~no},
+}
