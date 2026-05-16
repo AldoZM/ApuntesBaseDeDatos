@@ -1,0 +1,85 @@
+\chapter{Modelado UML y Diagramas ER}
+
+\section{Diagrama Entidad-Relación (ER)}
+
+Modelo conceptual independiente del DBMS. Define entidades, atributos y relaciones antes de pensar en tablas.
+
+\begin{itemize}
+  \item \textbf{Entidad:} objeto del mundo real con existencia propia (rectángulo)
+  \item \textbf{Atributo:} propiedad de la entidad (elipse / columna en Crow's Foot)
+  \item \textbf{Relación:} asociación entre entidades (rombo en Chen, línea en Crow's Foot)
+  \item \textbf{Entidad débil:} depende de otra para existir (sin PK propia)
+\end{itemize}
+
+\section{Notaciones}
+
+\begin{itemize}
+  \item \textbf{Chen:} rectángulos, rombos, elipses. Académica, verbosa.
+  \item \textbf{Crow's Foot:} líneas con símbolos de cardinalidad en los extremos. Estándar en herramientas (Lucidchart, dbdiagram.io).
+  \item \textbf{UML Clases:} atributos y métodos en compartimentos. Útil cuando el modelo de datos y el de objetos son lo mismo.
+\end{itemize}
+
+\section{Cardinalidad en Crow's Foot}
+
+\begin{itemize}
+  \item \texttt{||} exactamente uno (obligatorio)
+  \item \texttt{|o} cero o uno (opcional)
+  \item \texttt{||<} uno o muchos
+  \item \texttt{|o<} cero o muchos
+\end{itemize}
+
+\begin{diagramabox}{Diagrama ER --- Cliente, Pedido, Producto}
+\begin{center}
+  % Generar con: make diagrams (requiere Java + plantuml.jar)
+  % Fuente: images/src_plantuml/04_er_basico.puml
+  \fbox{\parbox{0.7\textwidth}{\centering\vspace{1em}[Diagrama PlantUML: ejecutar \texttt{make diagrams}]\vspace{1em}}}
+\end{center}
+\end{diagramabox}
+
+\begin{lstlisting}[caption={DDL derivado del modelo ER}]
+CREATE TABLE clientes (
+    id     SERIAL PRIMARY KEY,
+    nombre VARCHAR(100) NOT NULL,
+    email  VARCHAR(200) UNIQUE NOT NULL
+);
+
+CREATE TABLE productos (
+    id     SERIAL PRIMARY KEY,
+    nombre VARCHAR(100) NOT NULL,
+    precio NUMERIC(10,2) NOT NULL CHECK (precio >= 0)
+);
+
+CREATE TABLE pedidos (
+    id          SERIAL PRIMARY KEY,
+    id_cliente  INTEGER NOT NULL REFERENCES clientes(id),
+    fecha       TIMESTAMP DEFAULT NOW(),
+    estado      VARCHAR(20) DEFAULT 'pendiente'
+);
+
+CREATE TABLE pedido_items (
+    id_pedido   INTEGER REFERENCES pedidos(id)   ON DELETE CASCADE,
+    id_producto INTEGER REFERENCES productos(id) ON DELETE RESTRICT,
+    cantidad    INTEGER NOT NULL CHECK (cantidad > 0),
+    precio_unit NUMERIC(10,2) NOT NULL,
+    PRIMARY KEY (id_pedido, id_producto)
+);
+\end{lstlisting}
+
+\begin{lstlisting}[caption={Consulta con JOIN múltiple}]
+SELECT p.id AS pedido, c.nombre AS cliente,
+       pr.nombre AS producto, pi.cantidad, pi.precio_unit
+FROM   pedidos p
+JOIN   clientes c      ON p.id_cliente = c.id
+JOIN   pedido_items pi ON pi.id_pedido = p.id
+JOIN   productos pr    ON pi.id_producto = pr.id
+WHERE  p.estado = 'pendiente'
+ORDER BY p.fecha DESC;
+\end{lstlisting}
+
+\begin{entrevistabox}
+\begin{enumerate}
+  \item ¿Cuál es la diferencia entre notación Chen y Crow's Foot?
+  \item ¿Cómo modelas una relación M:N en SQL?
+  \item ¿Qué es una entidad débil? Da un ejemplo.
+\end{enumerate}
+\end{entrevistabox}

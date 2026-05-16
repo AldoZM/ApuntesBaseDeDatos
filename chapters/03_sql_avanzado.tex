@@ -1,0 +1,92 @@
+\chapter{SQL Avanzado}
+
+\section{CTEs (Common Table Expressions)}
+
+CTE es una consulta nombrada temporal, definida con \texttt{WITH}. Mejora legibilidad y permite recursión. Se evalúa una vez por sentencia (en PostgreSQL, materializada o no según el optimizador).
+
+\begin{itemize}
+  \item CTE regular: alias de subconsulta, mejora legibilidad
+  \item CTE recursiva: auto-referencia para jerarquías/grafos
+  \item \texttt{MATERIALIZED} / \texttt{NOT MATERIALIZED}: hint al planificador
+\end{itemize}
+
+\section{Window Functions}
+
+Operan sobre un conjunto de filas relacionadas con la fila actual (la ``ventana'') sin colapsar filas como \texttt{GROUP BY}. Sintaxis: \texttt{función() OVER (PARTITION BY ... ORDER BY ...)}.
+
+Funciones más usadas: \texttt{ROW\_NUMBER()}, \texttt{RANK()}, \texttt{DENSE\_RANK()}, \texttt{LAG()}, \texttt{LEAD()}, \texttt{SUM() OVER}, \texttt{AVG() OVER}.
+
+\section{EXPLAIN ANALYZE}
+
+\texttt{EXPLAIN} muestra el plan de ejecución; \texttt{EXPLAIN ANALYZE} lo ejecuta y muestra tiempos reales. Nodos clave: \texttt{Seq Scan} (lento en tablas grandes), \texttt{Index Scan} (usa índice), \texttt{Hash Join} vs \texttt{Nested Loop}.
+
+\begin{lstlisting}[caption={CTEs --- regular y recursiva}]
+-- CTE regular: ventas por región con total acumulado
+WITH ventas_region AS (
+    SELECT region, SUM(monto) AS total
+    FROM   ventas
+    WHERE  fecha >= '2024-01-01'
+    GROUP BY region
+)
+SELECT region, total,
+       ROUND(100.0 * total / SUM(total) OVER (), 2) AS pct
+FROM   ventas_region
+ORDER BY total DESC;
+
+-- CTE recursiva: jerarquía de empleados (árbol)
+WITH RECURSIVE jerarquia AS (
+    SELECT id, nombre, id_jefe, 0 AS nivel
+    FROM   empleados WHERE id_jefe IS NULL
+
+    UNION ALL
+
+    SELECT e.id, e.nombre, e.id_jefe, j.nivel + 1
+    FROM   empleados e
+    JOIN   jerarquia j ON e.id_jefe = j.id
+)
+SELECT nivel, nombre FROM jerarquia ORDER BY nivel, nombre;
+\end{lstlisting}
+
+\begin{lstlisting}[caption={Window Functions}]
+-- ROW_NUMBER, RANK, DENSE_RANK
+SELECT nombre, depto, salario,
+       ROW_NUMBER() OVER (PARTITION BY depto ORDER BY salario DESC) AS fila,
+       RANK()       OVER (PARTITION BY depto ORDER BY salario DESC) AS rango,
+       DENSE_RANK() OVER (PARTITION BY depto ORDER BY salario DESC) AS rango_denso
+FROM empleados;
+
+-- LAG y LEAD: comparar con fila anterior/siguiente
+SELECT fecha, ventas,
+       LAG(ventas)  OVER (ORDER BY fecha) AS ventas_dia_anterior,
+       ventas - LAG(ventas) OVER (ORDER BY fecha) AS delta
+FROM reporte_diario;
+
+-- Running total
+SELECT fecha, monto,
+       SUM(monto) OVER (ORDER BY fecha ROWS UNBOUNDED PRECEDING) AS acumulado
+FROM ventas;
+\end{lstlisting}
+
+\begin{lstlisting}[caption={EXPLAIN ANALYZE}]
+EXPLAIN ANALYZE
+SELECT e.nombre, d.nombre
+FROM   empleados e
+JOIN   departamentos d ON e.id_depto = d.id
+WHERE  e.salario > 50000;
+
+-- Salida tipica:
+-- Hash Join  (cost=12.50..34.20 rows=50 width=200)
+--   -> Seq Scan on empleados
+--        Filter: (salario > 50000)
+--   -> Hash
+--        -> Seq Scan on departamentos
+-- Si ves "Seq Scan" en tabla grande = considera indice en esa columna
+\end{lstlisting}
+
+\begin{entrevistabox}
+\begin{enumerate}
+  \item ¿Cuál es la diferencia entre \texttt{ROW\_NUMBER()}, \texttt{RANK()} y \texttt{DENSE\_RANK()}?
+  \item ¿Cuándo usarías una CTE recursiva? Da un ejemplo de caso de uso.
+  \item ¿Cómo interpretas un nodo \texttt{Seq Scan} en \texttt{EXPLAIN ANALYZE}?
+\end{enumerate}
+\end{entrevistabox}

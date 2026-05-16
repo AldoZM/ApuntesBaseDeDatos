@@ -1,0 +1,74 @@
+\chapter{Introducción a Bases de Datos}
+
+\section{¿Qué es una base de datos?}
+
+Sistema organizado para almacenar, gestionar y recuperar datos de forma persistente. El DBMS administra acceso, integridad y almacenamiento; la aplicación nunca toca los archivos directamente.
+
+\begin{itemize}
+  \item \textbf{BD:} colección estructurada de datos relacionados
+  \item \textbf{DBMS:} software que controla acceso concurrente, integridad y persistencia
+  \item \textbf{RDBMS:} DBMS basado en modelo relacional (PostgreSQL, MySQL, Oracle, SQL Server)
+\end{itemize}
+
+\section{Tipos de bases de datos}
+
+\begin{itemize}
+  \item \textbf{Relacional (SQL):} tablas con esquema fijo, ACID, joins — PostgreSQL, MySQL
+  \item \textbf{Documental:} JSON/BSON sin esquema fijo — MongoDB, CouchDB
+  \item \textbf{Clave-valor:} acceso O(1) por clave — Redis, DynamoDB
+  \item \textbf{Columnar:} analítica, series de tiempo — Cassandra, ClickHouse
+  \item \textbf{Grafos:} relaciones complejas entre entidades — Neo4j
+\end{itemize}
+
+\section{DBMS vs archivo plano}
+
+\begin{itemize}
+  \item Concurrencia controlada: múltiples usuarios sin corrupción
+  \item Integridad referencial automática (FK, constraints)
+  \item Recuperación ante fallos (WAL, journaling)
+  \item Consultas declarativas en lugar de código imperativo
+\end{itemize}
+
+\begin{lstlisting}[caption={DDL + DML básico}]
+-- Crear tabla
+CREATE TABLE empleados (
+    id        SERIAL PRIMARY KEY,
+    nombre    VARCHAR(100) NOT NULL,
+    depto     VARCHAR(50),
+    salario   NUMERIC(10,2) DEFAULT 0
+);
+
+-- Insertar
+INSERT INTO empleados (nombre, depto, salario)
+VALUES ('Ana López', 'Ingeniería', 45000.00);
+
+-- Consultar
+SELECT nombre, salario
+FROM   empleados
+WHERE  depto = 'Ingeniería'
+ORDER BY salario DESC;
+\end{lstlisting}
+
+\begin{lstlisting}[caption={Tipos de datos comunes}]
+-- Numéricos
+id      SERIAL          -- entero autoincremental (alias de INTEGER + secuencia)
+precio  NUMERIC(10,2)   -- exacto: 10 dígitos, 2 decimales
+ratio   FLOAT           -- punto flotante (impreciso para dinero)
+
+-- Texto
+nombre  VARCHAR(100)    -- longitud máxima 100
+codigo  CHAR(6)         -- longitud fija 6 (rellena con espacios)
+notas   TEXT            -- longitud ilimitada
+
+-- Fechas
+creado  TIMESTAMP DEFAULT NOW()
+fecha   DATE
+\end{lstlisting}
+
+\begin{entrevistabox}
+\begin{enumerate}
+  \item ¿Cuál es la diferencia entre DBMS y RDBMS?
+  \item ¿Cuándo elegirías NoSQL sobre SQL? Da un ejemplo concreto.
+  \item ¿Qué ventajas ofrece un DBMS frente a archivos planos para una aplicación con múltiples usuarios?
+\end{enumerate}
+\end{entrevistabox}

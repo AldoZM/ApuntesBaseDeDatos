@@ -1,0 +1,75 @@
+\chapter{Modelo Relacional}
+
+\section{Conceptos fundamentales}
+
+El modelo relacional representa datos como tablas (relaciones). Cada fila es una tupla única; cada columna es un atributo con dominio definido. Las relaciones entre tablas se expresan mediante llaves.
+
+\begin{itemize}
+  \item \textbf{Relación:} tabla con nombre único en el esquema
+  \item \textbf{Tupla:} fila --- instancia de la entidad
+  \item \textbf{Atributo:} columna con tipo de dato fijo
+  \item \textbf{Dominio:} conjunto de valores válidos para un atributo
+  \item \textbf{Grado:} número de atributos (columnas)
+  \item \textbf{Cardinalidad:} número de tuplas (filas)
+\end{itemize}
+
+\section{Llaves}
+
+\begin{itemize}
+  \item \textbf{Superkey:} conjunto de atributos que identifica tuplas únicamente
+  \item \textbf{Candidate key:} superkey mínima (sin atributos redundantes)
+  \item \textbf{Primary Key (PK):} candidate key elegida; NOT NULL + UNIQUE
+  \item \textbf{Foreign Key (FK):} atributo que referencia la PK de otra tabla
+  \item \textbf{Surrogate key:} PK artificial (SERIAL/UUID) sin significado de negocio
+  \item \textbf{Natural key:} PK con significado de negocio (RFC, email)
+\end{itemize}
+
+\section{Integridad referencial}
+
+FK debe apuntar a un valor que existe en la tabla referenciada, o ser NULL si se permite.
+Acciones ante DELETE/UPDATE en tabla padre: \texttt{CASCADE}, \texttt{SET NULL}, \texttt{RESTRICT}, \texttt{NO ACTION}.
+
+\begin{lstlisting}[caption={PK, FK e integridad referencial}]
+CREATE TABLE departamentos (
+    id     SERIAL PRIMARY KEY,
+    nombre VARCHAR(80) NOT NULL UNIQUE
+);
+
+CREATE TABLE empleados (
+    id       SERIAL PRIMARY KEY,
+    nombre   VARCHAR(100) NOT NULL,
+    id_depto INTEGER REFERENCES departamentos(id)
+             ON DELETE SET NULL
+             ON UPDATE CASCADE
+);
+
+-- FK viola integridad si el depto no existe:
+INSERT INTO empleados (nombre, id_depto) VALUES ('Carlos', 999);
+-- ERROR: insert or update on table "empleados" violates foreign key constraint
+\end{lstlisting}
+
+\begin{lstlisting}[caption={Cardinalidades 1:1, 1:N, M:N}]
+-- 1:N — un depto tiene muchos empleados (FK en "muchos")
+-- (ya modelado arriba con id_depto en empleados)
+
+-- M:N — un empleado puede estar en muchos proyectos
+CREATE TABLE proyectos (
+    id     SERIAL PRIMARY KEY,
+    nombre VARCHAR(100) NOT NULL
+);
+
+CREATE TABLE empleados_proyectos (
+    id_empleado INTEGER REFERENCES empleados(id)   ON DELETE CASCADE,
+    id_proyecto INTEGER REFERENCES proyectos(id)   ON DELETE CASCADE,
+    rol         VARCHAR(50),
+    PRIMARY KEY (id_empleado, id_proyecto)
+);
+\end{lstlisting}
+
+\begin{entrevistabox}
+\begin{enumerate}
+  \item ¿Cuál es la diferencia entre Primary Key y Unique Key?
+  \item ¿Qué sucede con los registros hijos cuando se borra el padre con \texttt{ON DELETE CASCADE}?
+  \item ¿Cuándo preferirías una surrogate key sobre una natural key?
+\end{enumerate}
+\end{entrevistabox}

@@ -1,0 +1,73 @@
+\chapter{Normalización}
+
+\section{¿Por qué normalizar?}
+
+Normalización elimina redundancia y anomalías de actualización. Una tabla desnormalizada puede tener: anomalía de inserción (no puedo insertar sin datos extras), de actualización (cambio en un lugar no se propaga) y de borrado (pierdo datos al borrar fila).
+
+\section{Formas normales}
+
+\begin{itemize}
+  \item \textbf{1NF:} valores atómicos (sin listas/arrays en celdas), sin filas duplicadas, PK definida
+  \item \textbf{2NF:} en 1NF + sin dependencias parciales (atributos dependen de toda la PK, no solo parte)
+  \item \textbf{3NF:} en 2NF + sin dependencias transitivas (atributo no-clave no depende de otro atributo no-clave)
+  \item \textbf{BCNF:} en 3NF + todo determinante es superkey (más estricta que 3NF)
+\end{itemize}
+
+\section{Dependencias funcionales}
+
+$X \rightarrow Y$: conocer X determina Y. Si PK = \{A, B\} y $A \rightarrow C$ (C no depende de B), hay dependencia parcial → viola 2NF.
+
+\begin{lstlisting}[caption={Tabla que viola 2NF y su corrección}]
+-- VIOLA 2NF: PK=(id_pedido, id_producto) pero nombre_producto
+--            depende solo de id_producto (dependencia parcial)
+CREATE TABLE pedido_items_malo (
+    id_pedido       INTEGER,
+    id_producto     INTEGER,
+    nombre_producto VARCHAR(100),
+    cantidad        INTEGER,
+    PRIMARY KEY (id_pedido, id_producto)
+);
+
+-- CORRECTO: separar producto a su propia tabla
+CREATE TABLE productos (
+    id     SERIAL PRIMARY KEY,
+    nombre VARCHAR(100) NOT NULL
+);
+
+CREATE TABLE pedido_items (
+    id_pedido   INTEGER,
+    id_producto INTEGER REFERENCES productos(id),
+    cantidad    INTEGER NOT NULL,
+    PRIMARY KEY (id_pedido, id_producto)
+);
+\end{lstlisting}
+
+\begin{lstlisting}[caption={Tabla que viola 3NF y su corrección}]
+-- VIOLA 3NF: id_depto -> nombre_depto (dependencia transitiva)
+CREATE TABLE empleados_malo (
+    id_empleado  SERIAL PRIMARY KEY,
+    nombre       VARCHAR(100),
+    id_depto     INTEGER,
+    nombre_depto VARCHAR(80)
+);
+
+-- CORRECTO: tabla separada para departamentos
+CREATE TABLE departamentos (
+    id     SERIAL PRIMARY KEY,
+    nombre VARCHAR(80) NOT NULL
+);
+
+CREATE TABLE empleados (
+    id       SERIAL PRIMARY KEY,
+    nombre   VARCHAR(100),
+    id_depto INTEGER REFERENCES departamentos(id)
+);
+\end{lstlisting}
+
+\begin{entrevistabox}
+\begin{enumerate}
+  \item ¿Cuál es la diferencia entre 2NF y 3NF?
+  \item ¿Cuándo desnormalizarías intencionalmente una tabla?
+  \item Identifica la forma normal: \texttt{(orden\_id, producto\_id, categoria\_producto, cantidad)} con PK=(orden\_id, producto\_id).
+\end{enumerate}
+\end{entrevistabox}

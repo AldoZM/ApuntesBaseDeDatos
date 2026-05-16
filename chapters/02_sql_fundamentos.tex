@@ -1,0 +1,97 @@
+\chapter{SQL Fundamentos}
+
+\section{Sublanguages SQL}
+
+SQL se divide en cuatro sublanguages según el tipo de operación:
+
+\begin{itemize}
+  \item \textbf{DDL} (Data Definition Language): \texttt{CREATE, ALTER, DROP, TRUNCATE}
+  \item \textbf{DML} (Data Manipulation Language): \texttt{INSERT, UPDATE, DELETE}
+  \item \textbf{DQL} (Data Query Language): \texttt{SELECT}
+  \item \textbf{DCL} (Data Control Language): \texttt{GRANT, REVOKE}
+  \item \textbf{TCL} (Transaction Control): \texttt{BEGIN, COMMIT, ROLLBACK, SAVEPOINT}
+\end{itemize}
+
+\section{DDL --- definir estructura}
+
+\begin{itemize}
+  \item \texttt{CREATE TABLE} define el esquema; constraints inline o separados
+  \item \texttt{ALTER TABLE} modifica columnas, agrega/quita constraints
+  \item \texttt{TRUNCATE} vacía la tabla rápido (no dispara triggers fila por fila)
+  \item \texttt{DROP} elimina objeto permanentemente --- irreversible fuera de transacción
+\end{itemize}
+
+\section{DML + DQL --- manipular y consultar}
+
+Orden lógico de evaluación de \texttt{SELECT}:
+\texttt{FROM} → \texttt{JOIN} → \texttt{WHERE} → \texttt{GROUP BY} → \texttt{HAVING} → \texttt{SELECT} → \texttt{ORDER BY} → \texttt{LIMIT}
+
+\begin{lstlisting}[caption={DDL: CREATE, ALTER, DROP}]
+-- Crear tabla con constraints
+CREATE TABLE clientes (
+    id        SERIAL PRIMARY KEY,
+    email     VARCHAR(200) NOT NULL UNIQUE,
+    nombre    VARCHAR(100) NOT NULL,
+    activo    BOOLEAN DEFAULT TRUE,
+    creado_en TIMESTAMP DEFAULT NOW()
+);
+
+-- Agregar columna
+ALTER TABLE clientes ADD COLUMN telefono VARCHAR(20);
+
+-- Agregar constraint después de crear
+ALTER TABLE clientes ADD CONSTRAINT chk_email CHECK (email LIKE '%@%');
+
+-- Eliminar columna
+ALTER TABLE clientes DROP COLUMN telefono;
+\end{lstlisting}
+
+\begin{lstlisting}[caption={DML: INSERT, UPDATE, DELETE}]
+-- INSERT con RETURNING (PostgreSQL)
+INSERT INTO clientes (email, nombre)
+VALUES ('ana@ejemplo.com', 'Ana López')
+RETURNING id, creado_en;
+
+-- UPDATE con condición
+UPDATE clientes
+SET    activo = FALSE
+WHERE  creado_en < NOW() - INTERVAL '1 year'
+  AND  activo = TRUE;
+
+-- DELETE con subquery
+DELETE FROM clientes
+WHERE id IN (
+    SELECT id FROM clientes
+    WHERE activo = FALSE
+    ORDER BY creado_en
+    LIMIT 100
+);
+\end{lstlisting}
+
+\begin{lstlisting}[caption={SELECT con JOINs}]
+-- INNER JOIN: solo filas que coinciden en ambas tablas
+SELECT e.nombre, d.nombre AS departamento
+FROM   empleados e
+INNER JOIN departamentos d ON e.id_depto = d.id;
+
+-- LEFT JOIN: todas las filas de la izquierda, NULL si no hay match
+SELECT e.nombre, d.nombre AS departamento
+FROM   empleados e
+LEFT JOIN departamentos d ON e.id_depto = d.id;
+
+-- GROUP BY + HAVING
+SELECT   d.nombre, COUNT(e.id) AS total, AVG(e.salario) AS promedio
+FROM     empleados e
+JOIN     departamentos d ON e.id_depto = d.id
+GROUP BY d.nombre
+HAVING   COUNT(e.id) > 3
+ORDER BY promedio DESC;
+\end{lstlisting}
+
+\begin{entrevistabox}
+\begin{enumerate}
+  \item ¿Cuál es la diferencia entre \texttt{WHERE} y \texttt{HAVING}?
+  \item ¿Qué diferencia hay entre \texttt{DELETE} y \texttt{TRUNCATE}?
+  \item Explica los tipos de JOIN: INNER, LEFT, RIGHT, FULL OUTER.
+\end{enumerate}
+\end{entrevistabox}

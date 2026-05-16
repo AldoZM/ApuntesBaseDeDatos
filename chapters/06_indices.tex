@@ -1,0 +1,80 @@
+\chapter{Índices}
+
+\section{¿Qué es un índice?}
+
+Estructura de datos auxiliar que acelera búsquedas a costo de espacio en disco y lentitud en escrituras (INSERT/UPDATE/DELETE deben actualizar el índice). Sin índice = Seq Scan (lectura completa). Con índice = Index Scan (O(log n)).
+
+\section{Tipos de índices en PostgreSQL}
+
+\begin{itemize}
+  \item \textbf{B-tree:} default. Soporta \texttt{=, <, >, BETWEEN, LIKE 'prefix\%'}. Casi siempre la elección correcta.
+  \item \textbf{Hash:} solo igualdad (\texttt{=}). Más rápido que B-tree para igualdad exacta, pero sin soporte de rango.
+  \item \textbf{GIN} (Generalized Inverted Index): búsqueda en arrays, JSONB, full-text search.
+  \item \textbf{GiST:} datos geométricos, rangos, full-text. Más versátil que GIN pero más lento.
+  \item \textbf{BRIN:} tablas muy grandes con datos correlacionados con su posición física (series de tiempo).
+\end{itemize}
+
+\section{Cuándo crear (y no crear) un índice}
+
+Crea: columnas en \texttt{WHERE} frecuentes, FK (PostgreSQL no las indexa automáticamente), columnas en \texttt{JOIN}, columnas en \texttt{ORDER BY} con muchos registros.
+
+No creas: tablas pequeñas, columnas con baja cardinalidad (boolean, status con 3 valores), columnas que se actualizan constantemente.
+
+\begin{lstlisting}[caption={Crear índices B-tree, parcial y compuesto}]
+-- Índice simple (B-tree por defecto)
+CREATE INDEX idx_empleados_depto ON empleados(id_depto);
+
+-- Índice compuesto
+CREATE INDEX idx_pedidos_cliente_fecha ON pedidos(id_cliente, fecha DESC);
+
+-- Índice parcial: solo indexa subset de filas
+CREATE INDEX idx_pedidos_pendientes ON pedidos(fecha)
+WHERE estado = 'pendiente';
+
+-- Índice UNIQUE
+CREATE UNIQUE INDEX idx_clientes_email ON clientes(email);
+
+-- Crear índice SIN bloquear escrituras (producción)
+CREATE INDEX CONCURRENTLY idx_ventas_fecha ON ventas(fecha);
+\end{lstlisting}
+
+\begin{lstlisting}[caption={EXPLAIN ANALYZE --- verificar uso de índice}]
+-- Sin índice: Seq Scan
+EXPLAIN ANALYZE
+SELECT * FROM empleados WHERE salario > 80000;
+-- Seq Scan on empleados (cost=0..520 rows=15)
+-- Execution time: 8.4 ms
+
+-- Crear índice
+CREATE INDEX idx_empleados_salario ON empleados(salario);
+
+-- Con índice: Index Scan
+EXPLAIN ANALYZE
+SELECT * FROM empleados WHERE salario > 80000;
+-- Index Scan using idx_empleados_salario
+-- Execution time: 0.3 ms
+
+-- GIN para búsqueda en JSONB
+CREATE INDEX idx_datos_gin ON tabla USING GIN (datos_jsonb);
+SELECT * FROM tabla WHERE datos_jsonb @> '{"activo": true}';
+\end{lstlisting}
+
+\begin{lstlisting}[caption={Índices y FK en PostgreSQL}]
+-- PostgreSQL NO crea índice automático en FK
+-- Sin este índice, DELETE en tabla padre hace Seq Scan en hijos
+CREATE INDEX idx_empleados_id_depto ON empleados(id_depto);
+CREATE INDEX idx_pedidos_id_cliente ON pedidos(id_cliente);
+
+-- Ver índices existentes
+SELECT indexname, indexdef
+FROM   pg_indexes
+WHERE  tablename = 'empleados';
+\end{lstlisting}
+
+\begin{entrevistabox}
+\begin{enumerate}
+  \item ¿Cuándo usarías un índice GIN en lugar de B-tree?
+  \item ¿Por qué los índices ralentizan las escrituras?
+  \item ¿Qué es un índice parcial y cuándo tiene sentido usarlo?
+\end{enumerate}
+\end{entrevistabox}
