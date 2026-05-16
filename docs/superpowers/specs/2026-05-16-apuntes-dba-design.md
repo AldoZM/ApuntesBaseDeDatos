@@ -131,9 +131,28 @@ Incluye:
 
 ---
 
+## Decisiones de implementación (2026-05-16)
+
+- **Formato por capítulo:** prosa mínima (2-3 líneas) + bullets clave
+- **Ejemplos SQL:** 2-3 por capítulo (básico + avanzado)
+- **Diagramas:** PlantUML (Java + jar requerido), 7 stubs `.puml`
+- **Preguntas de entrevista:** 2-3 al final de cada capítulo + capítulo 13 lista completa
+- **Enfoque:** scaffold completo con stubs — PDF compila desde día 1, usuario rellena contenido
+
+## Cajas tcolorbox
+
+| Tipo | Emoji | Color |
+|---|---|---|
+| Teoría | 🧠 | Azul |
+| Código | 💻 | Gris oscuro |
+| Diagrama | 📊 | Verde |
+| Entrevista | 🎤 | Naranja |
+| Warning | ⚠️ | Rojo |
+| Tip | 💡 | Amarillo |
+
 ## Criterios de éxito
 
 - PDF compila sin errores desde `make` o `pdflatex main.tex`
-- Todos los capítulos tienen al menos: teoría, 1 ejemplo SQL, 1 pregunta de entrevista
-- Capítulos con diagramas tienen `.puml` fuente versionado
+- Todos los capítulos tienen estructura: teoría stub + 2-3 ejemplos SQL + 2-3 preguntas entrevista
+- Capítulos con diagramas tienen `.puml` stub versionado
 - Repo público en GitHub con README funcional
