@@ -1,7 +1,10 @@
 % preamble.tex
-\usepackage[utf8]{inputenc}
-\usepackage[T1]{fontenc}
-\usepackage[spanish]{babel}
+% LuaLaTeX: no necesita inputenc/fontenc, maneja UTF-8 nativamente
+\usepackage{fontspec}
+\usepackage[spanish, es-noquoting, es-noshorthands]{babel}
+% Emoji via Segoe UI Emoji (disponible en Windows 10+)
+\newfontfamily{\emojifont}{Segoe UI Emoji}[Renderer=HarfBuzz, BoldFont=*]
+\newcommand{\emj}[1]{{\emojifont #1}}
 \usepackage[a4paper, top=2.5cm, bottom=2.5cm, left=3cm, right=2.5cm]{geometry}
 \usepackage{fancyhdr}
 \usepackage{hyperref}
@@ -9,7 +12,7 @@
 \usepackage{listings}
 \usepackage{tcolorbox}
 \usepackage{tikz}
-\usetikzlibrary{shapes, arrows, positioning}
+\usetikzlibrary{arrows, positioning}
 \usepackage{graphicx}
 \usepackage{booktabs}
 \usepackage{enumitem}
@@ -64,7 +67,7 @@
   colback=azulclaro,
   colframe=azuloscu,
   fonttitle=\bfseries,
-  title={[Teoria] #1},
+  title={\emj{🧠}~#1},
   breakable,
   before upper={\parskip=4pt}
 }
@@ -73,7 +76,7 @@
   colback=verdeclaro,
   colframe=verdeoscu,
   fonttitle=\bfseries,
-  title={[Diagrama] #1},
+  title={\emj{📊}~#1},
   breakable,
   before upper={\parskip=4pt}
 }
@@ -82,7 +85,7 @@
   colback=naranjaclar,
   colframe=naranjaoscu,
   fonttitle=\bfseries,
-  title={[Entrevista] Preguntas tipicas},
+  title={\emj{🎤}~Preguntas típicas},
   breakable,
   before upper={\parskip=4pt}
 }
@@ -91,7 +94,7 @@
   colback=rojoclaro,
   colframe=rojooscu,
   fonttitle=\bfseries,
-  title={[Advertencia] #1},
+  title={\emj{⚠️}~#1},
   breakable,
   before upper={\parskip=4pt}
 }
@@ -100,7 +103,7 @@
   colback=amarilloclaro,
   colframe=amarillooscu,
   fonttitle=\bfseries,
-  title={[Tip] #1},
+  title={\emj{💡}~#1},
   breakable,
   before upper={\parskip=4pt}
 }

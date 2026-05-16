@@ -15,8 +15,8 @@ $(PUML_OUT)/%.png: $(PUML_SRC)/%.puml
 	java -jar $(PUML_JAR) -tpng -o $(CURDIR)/$(PUML_OUT) $<
 
 $(MAIN).pdf: $(MAIN).tex preamble.tex chapters/*.tex
-	pdflatex -interaction=nonstopmode $(MAIN).tex
-	pdflatex -interaction=nonstopmode $(MAIN).tex
+	lualatex -interaction=nonstopmode $(MAIN).tex
+	lualatex -interaction=nonstopmode $(MAIN).tex
 
 clean:
 	rm -f *.aux *.log *.toc *.out *.fls *.fdb_latexmk *.synctex.gz
