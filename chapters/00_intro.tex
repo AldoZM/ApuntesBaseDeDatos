@@ -2,50 +2,62 @@
 
 \section[¿Qué es una base de datos?]{\emj{🧠}~¿Qué es una base de datos?}
 
-Sistema organizado para almacenar, gestionar y recuperar datos de forma persistente.
-El DBMS actúa como intermediario: la aplicación nunca toca los archivos directamente.
-Garantiza acceso concurrente seguro, integridad de los datos y recuperación ante fallos.
+Una base de datos es un sistema organizado para almacenar, gestionar y recuperar información de forma persistente y estructurada.
+La clave es la palabra \emph{organizado}: los datos no solo se guardan, sino que se almacenan con una estructura que permite recuperarlos eficientemente, garantiza su integridad y permite consultarlos de formas arbitrarias.
 
-\begin{teoriabox}{Componentes de un DBMS}
+El \textbf{DBMS} (Database Management System) es el software que se interpone entre la aplicación y el almacenamiento físico.
+La aplicación nunca toca directamente los archivos en disco; todo pasa por el DBMS, que administra acceso concurrente, integridad de datos, recuperación ante fallos y seguridad.
+Esta separación de responsabilidades es fundamental: permite cambiar el motor de base de datos sin modificar la lógica de negocio de la aplicación.
+
+\begin{teoriabox}{Componentes internos de un DBMS}
 \begin{itemize}
-  \item \textbf{Motor de almacenamiento:} gestiona cómo se escriben y leen datos en disco
-  \item \textbf{Gestor de consultas:} analiza, optimiza y ejecuta SQL
-  \item \textbf{Gestor de transacciones:} garantiza ACID en operaciones concurrentes
-  \item \textbf{Gestor de recuperación:} usa WAL/journaling para no perder datos ante caída
-  \item \textbf{BD:} colección estructurada de datos relacionados
-  \item \textbf{DBMS:} software que controla acceso concurrente, integridad y persistencia
-  \item \textbf{RDBMS:} DBMS basado en modelo relacional (PostgreSQL, MySQL, Oracle, SQL Server)
+  \item \textbf{Motor de almacenamiento:} decide cómo se organizan los datos en disco (páginas, extents, tablespaces). InnoDB y MyISAM son motores distintos en MySQL.
+  \item \textbf{Gestor de consultas (Query Planner):} analiza el SQL, genera un árbol de operaciones y elige el plan de ejecución más barato según estadísticas.
+  \item \textbf{Gestor de transacciones:} coordina el acceso concurrente garantizando ACID. Usa locks o MVCC para aislar transacciones.
+  \item \textbf{Gestor de buffer (Buffer Pool):} mantiene páginas de disco en memoria RAM para evitar lecturas físicas costosas. Es el componente más crítico para el rendimiento.
+  \item \textbf{Gestor de recuperación (WAL):} escribe un log de cambios antes de modificar los datos. Si el servidor se cae, el log permite reconstruir el estado consistente.
+  \item \textbf{BD:} colección estructurada de datos relacionados con semántica definida por el esquema
+  \item \textbf{RDBMS:} DBMS basado en modelo relacional — PostgreSQL, MySQL, Oracle, SQL Server
 \end{itemize}
 \end{teoriabox}
 
 \section[Tipos de bases de datos]{\emj{📋}~Tipos de bases de datos}
 
-Cada tipo está optimizado para un patrón de acceso distinto.
-No existe un tipo universalmente superior: la elección depende del modelo de datos, la escala y los patrones de lectura/escritura.
+No existe un tipo de base de datos universalmente superior. Cada modelo está optimizado para un patrón de acceso específico y un tipo de dato diferente.
+Elegir el modelo equivocado puede resultar en un sistema que funciona pero que es imposible de escalar o mantener a mediano plazo.
+La tendencia moderna es \textbf{polyglot persistence}: usar múltiples tipos de BD en el mismo sistema, cada uno para lo que hace mejor.
 
 \begin{itemize}
-  \item \textbf{Relacional (SQL):} tablas con esquema fijo, ACID, joins — PostgreSQL, MySQL
-  \item \textbf{Documental:} JSON/BSON sin esquema fijo — MongoDB, CouchDB
-  \item \textbf{Clave-valor:} acceso O(1) por clave — Redis, DynamoDB
-  \item \textbf{Columnar:} analítica, series de tiempo — Cassandra, ClickHouse
-  \item \textbf{Grafos:} relaciones complejas entre entidades — Neo4j
+  \item \textbf{Relacional (SQL):} tablas con esquema fijo, joins entre tablas, transacciones ACID, lenguaje SQL estándar. Ideal para datos estructurados con relaciones complejas. PostgreSQL, MySQL, Oracle, SQL Server.
+  \item \textbf{Documental:} documentos JSON/BSON, esquema flexible por documento, bueno para datos heterogéneos o con estructura variable. MongoDB, CouchDB, Firestore.
+  \item \textbf{Clave-valor:} acceso O(1) por clave, sin estructura interna de valor, extremadamente rápido en lectura. Redis, DynamoDB, Memcached.
+  \item \textbf{Columnar:} optimizado para leer muchas filas de pocas columnas (analítica), no para transacciones. Cassandra, ClickHouse, Apache HBase.
+  \item \textbf{Grafos:} entidades como nodos, relaciones como aristas con propiedades. Ideal cuando las relaciones son tan importantes como los datos. Neo4j, Amazon Neptune.
+  \item \textbf{Series de tiempo:} datos con timestamp, optimizado para ingestión masiva y consultas por rango temporal. InfluxDB, TimescaleDB (extensión de PG).
 \end{itemize}
 
 \begin{tipbox}{¿Cuándo elegir SQL vs NoSQL?}
-Usa SQL (relacional) por defecto. Cambia a NoSQL solo cuando: el esquema varía mucho por registro, necesitas escalado horizontal masivo de escritura, o el modelo de datos es inherentemente no relacional (grafos, documentos anidados).
+Usa SQL (relacional) por defecto: es maduro, tiene garantías ACID, soporte de joins y herramientas consolidadas.
+Considera NoSQL cuando: el esquema varía mucho entre registros (documental), necesitas caché de baja latencia (clave-valor), escalado horizontal masivo de escritura (columnar), o las relaciones entre entidades son el dato principal (grafos).
+En sistemas complejos, la respuesta es frecuentemente ``ambos''.
 \end{tipbox}
 
 \section[DBMS vs archivo plano]{\emj{⚖️}~DBMS vs archivo plano}
 
-Un archivo CSV puede almacenar datos, pero no resuelve concurrencia ni integridad.
-Cuando dos procesos escriben a la vez en un archivo, los datos se corrompen.
-Un DBMS resuelve estos problemas con mecanismos internos, sin que la aplicación lo gestione.
+Es válido preguntarse por qué no usar simplemente archivos CSV o JSON en disco.
+La respuesta es la \textbf{concurrencia}: cuando dos procesos leen y escriben un archivo simultáneamente sin coordinación, los datos se corrompen.
+Un DBMS resuelve este problema y muchos más que no son obvios hasta que ocurren en producción.
+
+Imagine un sistema de inventario con archivos CSV: si dos cajeros descuentan el último artículo al mismo tiempo, ambos leen ``stock: 1'', ambos calculan ``stock: 0'' y ambos escriben. El resultado es stock negativo.
+Un DBMS con transacciones garantiza que solo uno de los dos vea el artículo disponible.
 
 \begin{itemize}
-  \item Concurrencia controlada: múltiples usuarios sin corrupción
-  \item Integridad referencial automática (FK, constraints)
-  \item Recuperación ante fallos (WAL, journaling)
-  \item Consultas declarativas en lugar de código imperativo
+  \item \textbf{Concurrencia controlada:} múltiples usuarios simultáneos sin corrupción de datos (locks, MVCC)
+  \item \textbf{Integridad referencial:} las FK garantizan que no existan huérfanos (pedidos sin cliente)
+  \item \textbf{Recuperación ante fallos:} WAL/journaling reconstruye el estado consistente tras una caída
+  \item \textbf{Consultas declarativas:} SQL describe \emph{qué} quieres; el motor elige \emph{cómo} obtenerlo
+  \item \textbf{Seguridad granular:} permisos a nivel de tabla, columna o fila por usuario/rol
+  \item \textbf{Índices automáticos:} acceso eficiente sin que la aplicación gestione estructuras de búsqueda
 \end{itemize}
 
 \begin{lstlisting}[caption={DDL + DML básico}]
@@ -85,7 +97,9 @@ fecha   DATE
 \end{lstlisting}
 
 \begin{warningbox}{FLOAT para dinero}
-Nunca uses \texttt{FLOAT} o \texttt{DOUBLE} para valores monetarios. El punto flotante IEEE 754 introduce errores de representación: \texttt{0.1 + 0.2 = 0.30000000000000004}. Usa siempre \texttt{NUMERIC(p,s)} o \texttt{DECIMAL(p,s)}.
+Nunca uses \texttt{FLOAT} o \texttt{DOUBLE} para valores monetarios. El estándar IEEE 754 de punto flotante introduce errores de representación binaria: \texttt{0.1 + 0.2 = 0.30000000000000004}.
+En operaciones financieras esto acumula errores que producen discrepancias al centavo.
+Usa siempre \texttt{NUMERIC(p,s)} o \texttt{DECIMAL(p,s)}, que almacena el número exacto en base 10.
 \end{warningbox}
 
 \begin{entrevistabox}

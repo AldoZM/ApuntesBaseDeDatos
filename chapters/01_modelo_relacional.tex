@@ -2,53 +2,70 @@
 
 \section[Conceptos fundamentales]{\emj{🧠}~Conceptos fundamentales}
 
-El modelo relacional, propuesto por E.F.~Codd en 1970, representa datos como tablas (relaciones matemáticas).
-Cada fila es una tupla única; cada columna es un atributo con dominio definido.
-Las relaciones entre tablas se expresan mediante llaves, no mediante punteros físicos.
+El modelo relacional fue propuesto por E.F.~Codd en 1970 en su paper ``A Relational Model of Data for Large Shared Data Banks''.
+Su idea central es representar datos como relaciones matemáticas (tablas) y manipularlos con álgebra relacional.
+La revolución del modelo relacional fue separar el \emph{qué} almacenar del \emph{cómo} almacenarlo físicamente: el programador describe la estructura lógica y el motor decide la representación física.
+
+Una \textbf{relación} no es solo una tabla de datos; tiene propiedades formales: ningún orden de filas es significativo, no puede haber filas duplicadas, y cada celda contiene un valor atómico.
+Estas propiedades, que parecen restricciones, son precisamente lo que hace al modelo predecible y poderoso: cualquier operación sobre una relación produce otra relación (álgebra cerrada).
 
 \begin{teoriabox}{Terminología formal vs coloquial}
 \begin{itemize}
-  \item \textbf{Relación} (formal) = \textbf{tabla} (coloquial)
-  \item \textbf{Tupla} (formal) = \textbf{fila / registro}
-  \item \textbf{Atributo} (formal) = \textbf{columna / campo} con tipo de dato fijo
-  \item \textbf{Dominio:} conjunto de valores válidos para un atributo (ej.~enteros positivos)
+  \item \textbf{Relación} (formal) = \textbf{tabla} (coloquial) — conjunto de tuplas del mismo tipo
+  \item \textbf{Tupla} (formal) = \textbf{fila / registro} — instancia de la entidad
+  \item \textbf{Atributo} (formal) = \textbf{columna / campo} — propiedad con dominio de valores válidos
+  \item \textbf{Dominio:} conjunto de valores posibles para un atributo (ej.~enteros positivos, emails válidos)
+  \item \textbf{Esquema:} definición de la estructura — nombre de la relación + atributos + tipos
+  \item \textbf{Instancia:} el conjunto de tuplas en un momento dado (los datos reales)
   \item \textbf{Grado:} número de atributos (columnas) de la relación
-  \item \textbf{Cardinalidad:} número de tuplas (filas) actuales en la relación
+  \item \textbf{Cardinalidad:} número de tuplas (filas) actuales en la instancia
 \end{itemize}
-La fortaleza del modelo relacional es su independencia física: el motor puede cambiar cómo almacena los datos sin afectar las consultas SQL.
+La independencia física del modelo relacional significa que el motor puede reorganizar datos en disco, cambiar estructuras de almacenamiento o agregar índices sin que las consultas SQL cambien.
 \end{teoriabox}
 
 \section[Llaves]{\emj{🔑}~Llaves}
 
-Las llaves son el mecanismo de identificación y relación entre tablas.
-Una tabla bien diseñada siempre tiene una PK definida; las FK crean el grafo de relaciones del esquema.
-Elegir entre surrogate y natural key afecta rendimiento, legibilidad y mantenimiento a largo plazo.
+Las llaves son el mecanismo fundamental de identidad y relación en el modelo relacional.
+Sin llaves, no es posible identificar unívocamente un registro ni establecer referencias entre tablas.
+La elección de llave primaria es una de las decisiones de diseño más importantes y tiene consecuencias en rendimiento, mantenibilidad y semántica del modelo.
+
+Una \textbf{superkey} es cualquier conjunto de atributos que identifica tuplas únicamente.
+La tabla de empleados con columnas \{id, nombre, email\}: \{id\}, \{email\}, \{id, nombre\}, \{id, email\} son todas superkeys.
+Una \textbf{candidate key} es la superkey mínima: quitar cualquier atributo la hace dejar de ser única.
+En el ejemplo, \{id\} y \{email\} son candidate keys; \{id, nombre\} no lo es porque podría haber dos empleados con el mismo nombre.
 
 \begin{itemize}
-  \item \textbf{Superkey:} conjunto de atributos que identifica tuplas únicamente
-  \item \textbf{Candidate key:} superkey mínima (sin atributos redundantes)
-  \item \textbf{Primary Key (PK):} candidate key elegida; NOT NULL + UNIQUE garantizados
-  \item \textbf{Foreign Key (FK):} atributo que referencia la PK de otra tabla
-  \item \textbf{Surrogate key:} PK artificial (SERIAL/UUID) sin significado de negocio
-  \item \textbf{Natural key:} PK con significado de negocio (RFC, email, CURP)
+  \item \textbf{Primary Key (PK):} candidate key elegida como identificador principal; NOT NULL + UNIQUE garantizados por el DBMS
+  \item \textbf{Alternate Key:} candidate key no elegida como PK (se implementa con UNIQUE constraint)
+  \item \textbf{Foreign Key (FK):} atributo que referencia la PK de otra tabla; establece la relación entre entidades
+  \item \textbf{Surrogate key:} PK artificial generada por el sistema (SERIAL/UUID/IDENTITY) sin significado de negocio
+  \item \textbf{Natural key:} PK basada en un atributo del mundo real (RFC, email, CURP, ISBN)
+  \item \textbf{Composite key:} PK formada por dos o más atributos; común en tablas de relación M:N
 \end{itemize}
 
-\begin{tipbox}{Surrogate vs Natural Key}
-Prefiere surrogate keys (SERIAL/UUID) para tablas con relaciones: son inmutables, sin significado de negocio que cambie y más eficientes en joins.
-Usa natural keys solo cuando el atributo es \emph{verdaderamente} estable y único (ej. ISBN de un libro, código IATA de un aeropuerto).
+\begin{tipbox}{Surrogate vs Natural Key — cuándo usar cada una}
+Las \textbf{surrogate keys} (SERIAL/UUID) son preferibles en la mayoría de los casos:
+son inmutables (el negocio nunca las cambia), sin significado que pueda volverse incorrecto, eficientes en joins al ser enteros, y simples de generar.
+
+Las \textbf{natural keys} tienen sentido cuando el atributo es \emph{verdaderamente} estable y único en el tiempo real, no solo en el modelo de negocio actual.
+El ISBN de un libro es una buena natural key; el RFC de un empleado parece bueno pero puede cambiar por errores o correcciones.
+Si hay duda, usa surrogate key.
 \end{tipbox}
 
 \section[Integridad referencial]{\emj{🔗}~Integridad referencial}
 
-La integridad referencial garantiza que una FK siempre apunte a un registro que existe en la tabla padre, o sea NULL si está permitido.
-Sin FK enforced, es posible tener huérfanos: órdenes sin cliente, facturas sin producto.
-El DBMS rechaza operaciones que violen la restricción.
+La integridad referencial garantiza que el grafo de relaciones entre tablas sea consistente: una FK siempre apunta a un registro que existe, o es NULL si la relación es opcional.
+Sin FK enforced por el DBMS, es trivialmente posible insertar pedidos sin cliente, items sin producto, o comentarios sin usuario — ``huérfanos'' que corrompen silenciosamente la lógica de negocio.
 
-Las acciones \texttt{ON DELETE} / \texttt{ON UPDATE} definen qué pasa con los hijos cuando cambia el padre:
+El DBMS verifica integridad en cada operación: al insertar un hijo, verifica que el padre existe; al borrar un padre, aplica la acción configurada sobre los hijos.
+Esta verificación tiene un costo mínimo en escritura pero previene categorías enteras de bugs que de otra forma se descubren semanas después en producción.
+
+Las acciones \texttt{ON DELETE} y \texttt{ON UPDATE} controlan qué pasa con los registros hijos cuando el padre cambia o se elimina:
 \begin{itemize}
-  \item \textbf{CASCADE:} propaga el cambio a los hijos automáticamente
-  \item \textbf{SET NULL:} pone NULL en la FK del hijo (la columna debe admitir NULL)
-  \item \textbf{RESTRICT / NO ACTION:} rechaza la operación si existen hijos (default)
+  \item \textbf{CASCADE:} propaga el cambio automáticamente a todos los hijos. Útil para datos que son parte del padre (ítems de una orden).
+  \item \textbf{SET NULL:} pone NULL en la FK del hijo. Requiere que la columna admita NULL. Útil para relaciones opcionales (empleado sin departamento).
+  \item \textbf{RESTRICT / NO ACTION:} rechaza la operación si existen hijos. Protege contra borrado accidental de datos referenciados.
+  \item \textbf{SET DEFAULT:} pone el valor DEFAULT de la columna. Poco usado; requiere que el default tenga sentido semántico.
 \end{itemize}
 
 \begin{lstlisting}[caption={PK, FK e integridad referencial}]

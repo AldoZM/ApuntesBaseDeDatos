@@ -2,49 +2,76 @@
 
 \section[Backups]{\emj{💾}~Backups}
 
-Un backup es inútil si no ha sido probado. La restauración es la parte importante, no el respaldo.
-PostgreSQL ofrece dos niveles de backup: lógico (SQL/dump) y físico (copia de archivos del cluster).
-La estrategia óptima combina backups físicos periódicos con WAL archiving para Point-In-Time Recovery.
+El backup es la operación más importante de la administración de bases de datos y, paradójicamente, la más frecuentemente ignorada hasta que ocurre un desastre.
+La regla más importante: \textbf{un backup no probado no existe}.
+Un dump corrupto, incompleto o que no puede restaurarse es exactamente igual a no tener backup.
 
-\begin{teoriabox}{Tipos de backup en PostgreSQL}
+PostgreSQL ofrece dos niveles de backup con propósitos distintos:
 \begin{itemize}
-  \item \textbf{pg\_dump:} backup lógico de una sola BD. Genera SQL o formato binario comprimido. Portable entre versiones y SOs. No incluye roles globales.
-  \item \textbf{pg\_dumpall:} backup lógico de todas las BDs + roles globales. No paralelizable.
-  \item \textbf{pg\_basebackup:} copia física del cluster completo. Necesario para PITR. Requiere acceso al servidor. Más rápido que pg\_dumpall en BDs grandes.
-  \item \textbf{WAL Archiving + PITR:} archivar los WAL segments permite restaurar a cualquier punto en el tiempo, no solo al momento del último backup.
+  \item \textbf{Backup lógico}: extrae los datos como SQL o en formato binario propio de PostgreSQL.
+    Portable entre versiones y sistemas operativos. Puede restaurar tablas o bases individuales.
+    Herramientas: \texttt{pg\_dump} (una BD) y \texttt{pg\_dumpall} (todo el cluster + roles globales).
+  \item \textbf{Backup físico}: copia los archivos binarios del cluster de PostgreSQL tal como están en disco.
+    Más rápido para BDs grandes. Requiere la misma versión de PostgreSQL al restaurar.
+    Herramienta: \texttt{pg\_basebackup}. Necesario para Point-In-Time Recovery (PITR).
 \end{itemize}
-Estrategia recomendada: \texttt{pg\_basebackup} semanal + WAL archiving continuo + \texttt{pg\_dump} diario para cada BD crítica.
+
+\begin{teoriabox}{Estrategia de backup recomendada}
+Una estrategia robusta combina ambos tipos:
+\begin{itemize}
+  \item \textbf{pg\_basebackup semanal:} copia física completa del cluster. Base para PITR.
+  \item \textbf{WAL Archiving continuo:} archiva cada segmento de WAL (16MB cada uno) a un almacenamiento externo. Permite restaurar a cualquier segundo entre el último basebackup y ahora.
+  \item \textbf{pg\_dump diario por BD crítica:} backup lógico para restauración selectiva de tablas, más fácil de hacer en ambientes de desarrollo/staging.
+\end{itemize}
+\textbf{Prueba de restauración mensual:} restaurar un backup en un servidor de prueba y verificar que los datos son correctos y la aplicación funciona.
+Sin esta prueba, no sabes si el backup funciona hasta que lo necesitas en producción.
 \end{teoriabox}
 
-\begin{warningbox}{Nunca confíes en un backup no probado}
-Ejecuta restauraciones de prueba regularmente en un ambiente aislado.
-Verifica que los datos sean consistentes y que las aplicaciones funcionen contra la BD restaurada.
-Un backup corrupto o incompleto es igual a no tener backup.
+\begin{warningbox}{Errores comunes en backups}
+\begin{itemize}
+  \item Backups en el mismo disco que los datos: si el disco falla, se pierde todo.
+  \item No incluir \texttt{pg\_dumpall} en la estrategia: los roles y tablespaces globales solo existen ahí.
+  \item Usar \texttt{VACUUM FULL} en producción sin planificación: bloquea la tabla completamente mientras reescribe; puede durar horas en tablas grandes.
+  \item Confiar en \texttt{pg\_dump} solo: sin WAL archiving, el RPO (punto de recuperación) es el momento del último dump, que puede ser hace 24 horas.
+\end{itemize}
 \end{warningbox}
 
 \section[Usuarios, roles y permisos]{\emj{🔐}~Usuarios, roles y permisos}
 
-PostgreSQL usa \textbf{roles} como unidad principal de seguridad. Un rol con el atributo \texttt{LOGIN} funciona como usuario; sin él, es solo un grupo de permisos.
-Los permisos son granulares: a nivel de BD, schema, tabla, columna y fila (Row Level Security).
-El principio de mínimo privilegio dicta que cada rol tenga exactamente los permisos que necesita, ni más.
+PostgreSQL usa \textbf{roles} como unidad unificada de identidad y permisos.
+Un rol con el atributo \texttt{LOGIN} es lo que coloquialmente llamamos ``usuario''; sin ese atributo, es un grupo de permisos que se asigna a otros roles.
+Esta unificación simplifica la administración: en lugar de gestionar usuarios y grupos por separado, todo es un rol.
 
+El modelo de permisos en PostgreSQL es \textbf{jerárquico y aditivo}:
+un rol hereda los permisos de todos los roles que se le asignan.
+Esto permite construir una jerarquía: rol \texttt{readonly} → se asigna a \texttt{reportes\_user}; si además se necesita escritura, se asigna \texttt{readwrite} al mismo usuario sin quitar nada.
+
+El \textbf{principio de mínimo privilegio} dicta que cada rol tenga exactamente los permisos que necesita para su función, ni más.
+Una aplicación web que solo lee datos no debe tener permiso de DROP TABLE.
+Un usuario de reportes no debe poder INSERT.
+Esto limita el daño en caso de compromiso de credenciales o bug en la aplicación.
+
+Los permisos se otorgan a distintos niveles de granularidad:
 \begin{itemize}
-  \item Roles con \texttt{LOGIN}: usuarios que se conectan
-  \item Roles sin \texttt{LOGIN}: grupos de permisos que se asignan a otros roles
-  \item \texttt{GRANT OPTION}: permite al receptor otorgar ese permiso a otros
-  \item \texttt{pg\_hba.conf}: controla autenticación (qué IPs pueden conectarse y con qué método)
+  \item \textbf{Conexión a BD:} \texttt{GRANT CONNECT ON DATABASE}
+  \item \textbf{Uso de schema:} \texttt{GRANT USAGE ON SCHEMA}
+  \item \textbf{Tablas:} \texttt{GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE}
+  \item \textbf{Columnas:} \texttt{GRANT SELECT (col1, col2) ON TABLE} — oculta columnas sensibles
+  \item \textbf{Filas:} Row Level Security (RLS) — cada fila puede tener su propia política de acceso
 \end{itemize}
 
 \section[Monitoreo básico]{\emj{📊}~Monitoreo básico}
 
-El monitoreo proactivo previene incidentes; el monitoreo reactivo solo los atiende después del daño.
+El monitoreo de una base de datos tiene dos objetivos: detectar problemas \emph{antes} de que impacten al usuario (monitoreo proactivo) y diagnosticar problemas cuando ya ocurrieron (monitoreo reactivo).
 Las vistas del sistema de PostgreSQL ofrecen visibilidad en tiempo real sin necesidad de herramientas externas.
 
+Las señales de alerta más importantes a monitorear continuamente:
 \begin{itemize}
-  \item \texttt{pg\_stat\_activity}: conexiones activas, estado, query en ejecución
-  \item \texttt{pg\_stat\_user\_tables}: estadísticas por tabla (lecturas, escrituras, dead tuples)
-  \item \texttt{pg\_locks}: locks activos y conflictos
-  \item \texttt{pg\_stat\_statements}: historial de queries con tiempos de ejecución (extensión)
+  \item \textbf{Conexiones activas:} si se acerca al límite de \texttt{max\_connections}, nuevas conexiones son rechazadas. Considera un connection pooler (PgBouncer).
+  \item \textbf{Transacciones largas:} una transacción abierta por horas bloquea el VACUUM y acumula bloat. Detectar y terminar las idle in transaction es crítico.
+  \item \textbf{Dead tuples:} filas muertas acumuladas por MVCC. Si autovacuum no las limpia a tiempo, la tabla crece sin control y las queries se vuelven lentas.
+  \item \textbf{Queries lentas:} con \texttt{pg\_stat\_statements}, identificar las queries con mayor tiempo total de ejecución y optimizarlas.
+  \item \textbf{Locks:} un lock no otorgado (waiting) indica contención. Si se acumula una cadena de locks, puede paralizar la aplicación.
 \end{itemize}
 
 \begin{lstlisting}[caption={Backups con pg\_dump y restauración}]

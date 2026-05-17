@@ -2,47 +2,68 @@
 
 \section[CTEs (Common Table Expressions)]{\emj{🧠}~CTEs (Common Table Expressions)}
 
-Una CTE es una subconsulta con nombre, definida con \texttt{WITH} antes del \texttt{SELECT} principal.
-Mejora la legibilidad al reemplazar subconsultas anidadas y permite la recursión para jerarquías y grafos.
-En PostgreSQL, una CTE se materializa por defecto (se ejecuta una vez y el resultado se almacena en memoria); usar \texttt{NOT MATERIALIZED} le da al planificador más libertad de optimización.
+Una CTE es una subconsulta con nombre definida antes del \texttt{SELECT} principal usando la cláusula \texttt{WITH}.
+El objetivo principal es legibilidad: en lugar de anidar subconsultas dentro de otras subconsultas (que se vuelven ilegibles rápidamente), se definen como bloques nombrados que se leen de arriba hacia abajo como un programa.
+
+Una CTE puede referenciarse múltiples veces en la misma query, lo que evita duplicación.
+En PostgreSQL, una CTE por defecto se \textbf{materializa}: se ejecuta una vez y el resultado se almacena en memoria.
+Esto puede ser una ventaja (si se referencia múltiples veces) o una desventaja (si el planificador no puede optimizarla junto con el resto de la query).
+Con \texttt{NOT MATERIALIZED}, le indicas al planificador que trate la CTE como una vista expandida en línea.
+
+Las \textbf{CTEs recursivas} usan \texttt{WITH RECURSIVE} y se auto-referencian.
+Son la herramienta estándar en SQL para recorrer estructuras jerárquicas (árboles organizacionales, categorías anidadas, grafos).
+La recursión termina cuando la parte recursiva no retorna filas.
 
 \begin{itemize}
-  \item CTE regular: alias de subconsulta reutilizable en la misma query
-  \item CTE recursiva: auto-referencia para árboles y grafos (\texttt{WITH RECURSIVE})
-  \item \texttt{MATERIALIZED} / \texttt{NOT MATERIALIZED}: hint al planificador (PG 12+)
+  \item CTE regular: alias de subconsulta reutilizable, mejora legibilidad
+  \item CTE recursiva (\texttt{WITH RECURSIVE}): auto-referencia para jerarquías y grafos
+  \item \texttt{MATERIALIZED}: fuerza ejecución y caché del resultado
+  \item \texttt{NOT MATERIALIZED}: permite al planificador optimizar junto con la query externa
 \end{itemize}
 
 \section[Window Functions]{\emj{📊}~Window Functions}
 
-Las window functions operan sobre un conjunto de filas relacionadas (la ``ventana'') sin colapsar el resultado como hace \texttt{GROUP BY}.
-Cada fila del resultado conserva su identidad y accede a valores de filas vecinas.
-Son esenciales para rankings, totales acumulados y comparaciones con período anterior.
+Las window functions son una de las características más poderosas de SQL moderno.
+Permiten calcular valores en relación a un conjunto de filas (la ``ventana'') \textbf{sin colapsar el resultado} como hace \texttt{GROUP BY}.
+Cada fila del resultado mantiene su identidad y adicionalmente puede ver valores de sus filas vecinas.
+
+El caso clásico que las necesita: calcular el salario de cada empleado y también el promedio del salario de su departamento en la misma fila.
+Con \texttt{GROUP BY} esto requeriría un JOIN adicional; con window functions es una sola expresión.
 
 \begin{teoriabox}{Anatomía de una Window Function}
+\texttt{función() OVER (PARTITION BY ... ORDER BY ... ROWS/RANGE BETWEEN ...)}
 \begin{itemize}
-  \item \textbf{función():} \texttt{ROW\_NUMBER, RANK, DENSE\_RANK, LAG, LEAD, SUM, AVG}
-  \item \textbf{OVER():} define la ventana — sin argumentos, usa toda la partición
-  \item \textbf{PARTITION BY:} divide las filas en grupos independientes (como GROUP BY pero sin colapsar)
-  \item \textbf{ORDER BY:} define el orden dentro de la ventana (obligatorio para LAG/LEAD/running totals)
-  \item \textbf{ROWS/RANGE BETWEEN:} delimita cuántas filas conforman la ventana para cada fila actual
+  \item \textbf{función():} \texttt{ROW\_NUMBER, RANK, DENSE\_RANK, LAG, LEAD, FIRST\_VALUE, LAST\_VALUE, SUM, AVG, COUNT}
+  \item \textbf{PARTITION BY:} divide las filas en grupos independientes (como GROUP BY pero sin colapsar filas). Cada partición tiene su propia ventana.
+  \item \textbf{ORDER BY:} define el orden dentro de cada partición. Obligatorio para funciones que dependen de posición relativa (LAG, LEAD, running totals).
+  \item \textbf{ROWS BETWEEN:} delimita exactamente cuántas filas forman la ventana para cada fila actual.
+    \texttt{UNBOUNDED PRECEDING}: desde el inicio de la partición.
+    \texttt{CURRENT ROW}: la fila actual.
+    \texttt{UNBOUNDED FOLLOWING}: hasta el final de la partición.
 \end{itemize}
-Diferencia \texttt{RANK} vs \texttt{DENSE\_RANK}: con empate en posición 2, \texttt{RANK} salta al 4; \texttt{DENSE\_RANK} continúa en 3.
+\textbf{ROW\_NUMBER} asigna un número único siempre; \textbf{RANK} salta números con empates (1,1,3); \textbf{DENSE\_RANK} no salta (1,1,2).
+\textbf{LAG(col, n)} devuelve el valor de \texttt{col} de n filas \emph{antes}; \textbf{LEAD(col, n)} de n filas \emph{después}.
 \end{teoriabox}
 
 \section[EXPLAIN ANALYZE]{\emj{🔍}~EXPLAIN ANALYZE}
 
-\texttt{EXPLAIN} muestra el plan de ejecución que el planificador elige sin ejecutar la query.
-\texttt{EXPLAIN ANALYZE} la ejecuta y muestra tiempos reales vs estimados.
-Leer el plan es la habilidad más importante para optimización de queries.
+\texttt{EXPLAIN} y \texttt{EXPLAIN ANALYZE} son las herramientas más importantes para entender por qué una query es lenta y cómo optimizarla.
+\texttt{EXPLAIN} muestra el plan sin ejecutar la query (estimaciones).
+\texttt{EXPLAIN ANALYZE} ejecuta la query y muestra tiempos reales junto con las estimaciones, permitiendo comparar.
+
+El plan se muestra como un árbol de nodos.
+Cada nodo representa una operación; el costo se acumula de hojas a raíz.
+El nodo más interno (más indentado) se ejecuta primero.
 
 \begin{itemize}
-  \item \textbf{Seq Scan:} lee toda la tabla — costoso en tablas grandes, normal en pequeñas
-  \item \textbf{Index Scan:} usa un índice para localizar filas — eficiente para baja selectividad
-  \item \textbf{Bitmap Index Scan:} acumula varias filas del índice antes de acceder al heap
-  \item \textbf{Hash Join:} construye hash table del lado pequeño, sondea el grande
-  \item \textbf{Nested Loop:} itera; eficiente cuando el lado interno es pequeño
-  \item \textbf{cost=inicio..total:} costo estimado en unidades arbitrarias (no segundos)
-  \item \textbf{rows:} estimación de filas; si difiere mucho de lo real, las estadísticas están desactualizadas
+  \item \textbf{Seq Scan:} lee toda la tabla secuencialmente. Normal para tablas pequeñas o cuando se retorna más del ~5-10\% de las filas. Preocupante en tablas grandes con filtros selectivos.
+  \item \textbf{Index Scan:} usa un índice para localizar filas específicas. Eficiente para alta selectividad (pocos resultados de muchas filas).
+  \item \textbf{Bitmap Index Scan + Bitmap Heap Scan:} acumula punteros del índice, los ordena y accede al heap en orden. Más eficiente que múltiples Index Scans.
+  \item \textbf{Hash Join:} construye una hash table del lado más pequeño y sondea el grande. Eficiente para joins de tablas medianas/grandes.
+  \item \textbf{Nested Loop:} itera el lado externo y busca en el interno. Eficiente cuando el lado interno es pequeño o indexado.
+  \item \textbf{Merge Join:} ambas tablas ordenadas; avanza en paralelo. Eficiente cuando los datos ya están ordenados.
+  \item \textbf{cost=inicio..total:} unidades de costo abstractas (no segundos). El inicio es el costo antes de la primera fila; el total es el costo de retornar todas las filas.
+  \item \textbf{rows:} estimación de filas. Si difiere mucho del \texttt{actual rows}, las estadísticas están desactualizadas. Ejecuta \texttt{ANALYZE tabla} para actualizarlas.
 \end{itemize}
 
 \begin{lstlisting}[caption={CTEs --- regular y recursiva}]

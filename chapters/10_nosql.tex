@@ -2,49 +2,72 @@
 
 \section[¿Cuándo NoSQL?]{\emj{🧠}~¿Cuándo NoSQL?}
 
-SQL (relacional) es la elección por defecto y cubre la mayoría de los casos.
-NoSQL surge para resolver limitaciones específicas: esquemas rígidos, escalado vertical costoso o modelos de datos que no encajan bien en tablas.
-La elección no es binaria: muchos sistemas usan ambos (polyglot persistence).
+``NoSQL'' (Not Only SQL) es un término paraguas para sistemas de almacenamiento que no siguen el modelo relacional estricto.
+No significa que SQL sea malo — significa que existen patrones de datos y acceso para los que el modelo relacional no es la herramienta más adecuada.
+La elección correcta requiere entender el \emph{modelo de datos}, los \emph{patrones de acceso} y las \emph{garantías} que el sistema necesita.
+
+El modelo relacional exige definir el esquema antes de insertar datos, enforcea integridad referencial, y usa joins para combinar datos de múltiples tablas.
+Estas características son ventajas para datos estructurados con relaciones complejas y transacciones ACID.
+Pero se convierten en fricción cuando: el esquema cambia frecuentemente durante el desarrollo, cada registro tiene atributos diferentes, o se necesita escalar escrituras horizontalmente a través de múltiples nodos sin coordinación.
 
 \begin{teoriabox}{¿Cuándo considerar NoSQL?}
 \begin{itemize}
-  \item El esquema varía significativamente entre registros del mismo tipo (catálogos de productos con atributos diferentes por categoría)
-  \item Se requiere escalado horizontal masivo de escritura que un RDBMS no puede satisfacer verticalmente
-  \item El modelo de datos es inherentemente no relacional: grafos de relaciones sociales, documentos JSON anidados, streams de eventos
-  \item La latencia de lectura es crítica y los joins son el cuello de botella (cachés con Redis)
+  \item \textbf{Esquema variable:} un catálogo de e-commerce donde cada producto (laptop, zapato, alimento) tiene atributos completamente distintos. Un modelo documental almacena cada producto como un documento JSON con su propia estructura.
+  \item \textbf{Escalado horizontal de escritura:} sistemas que reciben millones de escrituras por segundo (IoT, telemetría, logs). Cassandra puede distribuir escrituras entre cientos de nodos sin coordinación.
+  \item \textbf{Caché de baja latencia:} sesiones de usuario, resultados de queries costosas, contadores en tiempo real. Redis sirve datos desde RAM con latencia de microsegundos.
+  \item \textbf{Relaciones como dato principal:} redes sociales, grafos de conocimiento. En Neo4j, traversar 5 niveles de ``amigos de amigos'' es una operación nativa; en SQL requeriría CTEs recursivas costosas.
 \end{itemize}
-Lo que NoSQL \emph{no} resuelve: integridad referencial, transacciones complejas entre múltiples entidades, queries ad-hoc arbitrarias.
+Lo que NoSQL generalmente \emph{no} resuelve mejor que SQL: transacciones complejas multi-entidad, queries ad-hoc arbitrarias, integridad referencial automática, joins flexibles.
 \end{teoriabox}
 
 \section[Tipos y cuándo usar cada uno]{\emj{📋}~Tipos y cuándo usar cada uno}
 
-Cada tipo de NoSQL está optimizado para un patrón de acceso específico.
-Elegir el tipo incorrecto puede resultar en peor rendimiento que un RDBMS.
+Cada categoría de NoSQL tiene un modelo de datos distinto, optimizado para un patrón de acceso específico.
+Elegir una base de datos columnar para un caso de uso que necesita documentos heterogéneos, o un grafo para un caso de uso que necesita caché, produce sistemas más complicados y lentos que un RDBMS bien diseñado.
 
 \begin{itemize}
-  \item \textbf{Documental (MongoDB):} catálogos de productos, CMS, datos con estructura variable por documento
-  \item \textbf{Clave-valor (Redis):} caché, sesiones, colas, contadores en tiempo real, pub/sub
-  \item \textbf{Columnar (Cassandra):} series de tiempo, logs, IoT --- escritura masiva y consulta por clave de partición
-  \item \textbf{Grafos (Neo4j):} redes sociales, detección de fraude, recomendaciones --- cuando las relaciones \emph{son} el dato
+  \item \textbf{Documental (MongoDB, CouchDB, Firestore):} cada registro es un documento JSON/BSON autocontenido, sin esquema rígido.
+    Las relaciones se manejan embebiendo documentos dentro de otros (desnormalización intencional) o con referencias manuales.
+    Ideal para: catálogos de productos, CMS, perfiles de usuario con atributos variables, datos que se leen y escriben como unidad.
+    Limitación: joins entre colecciones son costosos y no garantizados ACID en todas las versiones.
+
+  \item \textbf{Clave-valor (Redis, DynamoDB, Memcached):} el modelo más simple — un mapa de clave a valor opaco.
+    Acceso O(1) por clave exacta. Redis enriquece el modelo con tipos de valor (strings, listas, sets, sorted sets, hashes, streams).
+    Ideal para: caché de sesiones, rankings en tiempo real, colas de trabajo, contadores atómicos, pub/sub.
+    Limitación: no soporta consultas por valor, solo por clave exacta.
+
+  \item \textbf{Columnar (Cassandra, HBase, ClickHouse):} los datos se almacenan agrupados por columna, no por fila.
+    Optimizado para leer muchas filas de pocas columnas (analítica) y para escritura masiva distribuida.
+    Cassandra particiona datos por una partition key y los ordena por clustering keys.
+    Ideal para: series de tiempo, logs de eventos, métricas de IoT, historial de actividad.
+    Limitación: el modelo de consulta es rígido — diseñas las tablas en función de las queries, no al revés.
+
+  \item \textbf{Grafos (Neo4j, Amazon Neptune, JanusGraph):} nodos (entidades) y aristas (relaciones) con propiedades en ambos.
+    Traversar relaciones es O(1) por arista, independiente del tamaño total del grafo.
+    Ideal para: detección de fraude (encontrar patrones en redes de transacciones), recomendaciones (``quienes compraron X también compraron Y''), gestión de identidades y acceso.
+    Limitación: no escala horizontalmente tan bien como otros NoSQL; menos herramientas y ecosistema.
 \end{itemize}
 
 \section[Teorema CAP]{\emj{⚖️}~Teorema CAP}
 
-El teorema CAP (Brewer, 2000) establece que un sistema distribuido no puede garantizar simultáneamente las tres propiedades: debe sacrificar una durante una partición de red.
-Es una guía para entender trade-offs, no una ley rígida: los sistemas modernos ofrecen tunabilidad entre consistencia y disponibilidad.
+El teorema CAP (Eric Brewer, 2000) establece una limitación fundamental de los sistemas distribuidos: ningún sistema puede garantizar simultáneamente las tres propiedades. Durante una partición de red (falla de comunicación entre nodos), el sistema debe elegir entre consistencia y disponibilidad.
 
 \begin{itemize}
-  \item \textbf{C} (Consistency): todos los nodos ven los mismos datos al mismo tiempo
-  \item \textbf{A} (Availability): el sistema siempre responde (puede ser con datos desactualizados)
-  \item \textbf{P} (Partition tolerance): el sistema sigue funcionando aunque haya fallas de red entre nodos
+  \item \textbf{C} (Consistency — Consistencia): todos los nodos del sistema ven exactamente los mismos datos al mismo tiempo. Una escritura en el nodo A es inmediatamente visible al leer en el nodo B.
+  \item \textbf{A} (Availability — Disponibilidad): el sistema siempre responde a las requests, aunque la respuesta pueda ser con datos desactualizados. Nunca retorna error por indisponibilidad.
+  \item \textbf{P} (Partition Tolerance — Tolerancia a particiones): el sistema sigue funcionando aunque haya fallas de red que dividan el cluster en grupos que no pueden comunicarse entre sí.
 \end{itemize}
+
+En la práctica, la Tolerancia a Particiones (P) es \textbf{no negociable} en cualquier sistema distribuido real: las redes fallan.
+Por lo tanto, la elección real es entre C y A durante una partición:
 
 \begin{tipbox}{CAP y bases de datos reales}
 \begin{itemize}
-  \item \textbf{CP} (Consistency + Partition): MongoDB, HBase, ZooKeeper --- prefieren consistencia, pueden rechazar requests durante partición
-  \item \textbf{AP} (Availability + Partition): Cassandra, DynamoDB, CouchDB --- siempre responden, con \emph{consistencia eventual}
-  \item \textbf{CA} (Consistency + Availability): solo sistemas no distribuidos (RDBMS en un solo nodo). En la práctica, P siempre está presente en redes reales.
+  \item \textbf{CP} (Consistency + Partition Tolerance): MongoDB, HBase, ZooKeeper. Durante una partición, prefieren rechazar requests (perder disponibilidad) antes que servir datos inconsistentes. El sistema puede estar ``temporalmente caído'' pero los datos son siempre correctos.
+  \item \textbf{AP} (Availability + Partition Tolerance): Cassandra, DynamoDB, CouchDB. Durante una partición, siguen respondiendo con los datos que tienen, aunque puedan estar desactualizados. Usan \textbf{consistencia eventual}: con el tiempo, todos los nodos convergen al mismo valor.
+  \item \textbf{CA} (Consistency + Availability sin Partition Tolerance): solo posible en un único nodo. En la práctica, un RDBMS en un solo servidor. En cuanto hay replicación, P está siempre presente.
 \end{itemize}
+La consistencia eventual significa: ``si no hay nuevas escrituras, eventualmente todos los nodos tendrán el mismo valor''. El tiempo de convergencia depende del sistema y la carga. Es aceptable cuando los usuarios pueden tolerar ver datos levemente desactualizados (timelines de redes sociales, contadores aproximados).
 \end{tipbox}
 
 \begin{lstlisting}[language=, caption={MongoDB --- CRUD básico}]

@@ -2,50 +2,71 @@
 
 \section[¿Qué es un índice?]{\emj{🧠}~¿Qué es un índice?}
 
-Un índice es una estructura de datos auxiliar que mantiene una copia ordenada de uno o más atributos, con punteros a las filas originales.
-La analogía es el índice de un libro: en lugar de leer todo el libro para encontrar un tema, saltas directo a la página.
-Sin índice, el DBMS hace un \textbf{Seq Scan}: lee cada fila de la tabla. Con índice, hace un \textbf{Index Scan}: O(log n).
+Un índice es una estructura de datos auxiliar que mantiene una copia ordenada de uno o más atributos de una tabla, con punteros a las filas originales en el heap (la tabla principal).
+La analogía del índice de un libro es precisa: en lugar de leer todo el libro para encontrar un tema (Seq Scan), vas directamente a la página referenciada (Index Scan).
 
-\begin{teoriabox}{Costo real de un índice}
-Un índice no es gratuito:
+Sin índice, el motor debe leer \emph{cada fila} de la tabla para encontrar las que cumplen el filtro — esto es $O(n)$.
+Con un índice B-tree, la búsqueda es $O(\log n)$ para localizar la primera fila, y luego secuencial para las siguientes.
+En una tabla de 10 millones de filas, la diferencia entre Seq Scan e Index Scan puede ser de 8 segundos vs 0.3 milisegundos.
+
+\begin{teoriabox}{Estructura interna de un índice B-tree}
+Un B-tree (árbol B) es un árbol balanceado de búsqueda con estas propiedades:
 \begin{itemize}
-  \item \textbf{Espacio en disco:} el índice ocupa espacio adicional (típicamente 10-30\% del tamaño de la tabla)
-  \item \textbf{Lentitud en escrituras:} cada \texttt{INSERT}, \texttt{UPDATE} o \texttt{DELETE} debe actualizar todos los índices de la tabla
-  \item \textbf{Mantenimiento:} los índices se fragmentan con el tiempo (bloat) y requieren \texttt{REINDEX} periódico
+  \item \textbf{Nodos internos:} contienen claves y punteros a nodos hijo. Guían la búsqueda de $O(\log n)$.
+  \item \textbf{Nodos hoja:} contienen las claves ordenadas y el puntero al heap (tid: page + offset). Son el nivel que finalmente referencia los datos.
+  \item \textbf{Balanceado:} todas las hojas están a la misma profundidad. Un árbol con 1 millón de entradas tiene solo ~20 niveles.
+  \item \textbf{Soporte de rangos:} las hojas están enlazadas entre sí, permitiendo escaneos de rango eficientes (BETWEEN, >, <).
 \end{itemize}
-El trade-off es: acelera lecturas, penaliza escrituras. En tablas con muchas escrituras y pocas lecturas, un índice puede empeorar el rendimiento.
+\textbf{Costo real de mantener un índice:}
+cada INSERT, UPDATE o DELETE debe actualizar todas las estructuras de índice de la tabla.
+En una tabla con 5 índices, cada escritura genera 5 operaciones adicionales de árbol.
+En tablas con escritura masiva, esto puede ser el cuello de botella.
 \end{teoriabox}
 
 \section[Tipos de índices en PostgreSQL]{\emj{📋}~Tipos de índices en PostgreSQL}
 
-PostgreSQL ofrece varios tipos de índices, cada uno optimizado para un tipo de búsqueda distinto.
-B-tree cubre el 90\% de los casos; los demás tipos resuelven necesidades específicas.
+PostgreSQL ofrece varios tipos de índices porque no existe una estructura óptima para todos los patrones de consulta.
+Cada tipo está optimizado para un conjunto específico de operadores y tipos de datos.
+Elegir el tipo incorrecto puede hacer que el índice sea ignorado por el planificador.
 
 \begin{itemize}
-  \item \textbf{B-tree:} default. Soporta \texttt{=, <, >, BETWEEN, LIKE 'prefix\%'}. Casi siempre la elección correcta.
-  \item \textbf{Hash:} solo igualdad (\texttt{=}). Más rápido que B-tree para igualdad exacta, sin soporte de rango.
-  \item \textbf{GIN} (Generalized Inverted Index): búsqueda en arrays, JSONB, full-text search (\texttt{@@} operador).
-  \item \textbf{GiST:} datos geométricos, rangos, full-text. Más versátil que GIN pero más lento en búsqueda.
-  \item \textbf{BRIN:} tablas muy grandes con datos correlacionados con posición física (series de tiempo, logs).
+  \item \textbf{B-tree (default):} árbol balanceado. Soporta: \texttt{=, <, >, <=, >=, BETWEEN, LIKE 'prefix\%', IS NULL, IN}.
+    El 90\% de los casos. Si no sabes qué tipo usar, usa B-tree.
+
+  \item \textbf{Hash:} tabla hash. Solo soporta \texttt{=}. Ligeramente más rápido que B-tree para igualdad exacta, pero no soporta rangos y no se replica en versiones antiguas de PG. Poco usado.
+
+  \item \textbf{GIN} (Generalized Inverted Index): índice invertido — mapea elementos a las filas que los contienen.
+    Ideal para: arrays (\texttt{@>, \&\&}), JSONB (\texttt{@>, ?}), full-text search (\texttt{@@}).
+    Lento en escritura (reconstruye la estructura), muy rápido en consultas.
+
+  \item \textbf{GiST} (Generalized Search Tree): framework extensible para tipos de datos no estándar.
+    Usado para: geometría/geo (PostGIS), rangos (\texttt{tsrange, daterange}), full-text.
+    Más versátil que GIN, algo más lento en búsqueda.
+
+  \item \textbf{BRIN} (Block Range Index): almacena rangos mínimo-máximo por bloque físico.
+    Muy compacto (tamaño ínfimo comparado con B-tree). Eficiente solo cuando los datos están físicamente ordenados por la columna indexada (series de tiempo insertadas en orden, logs).
 \end{itemize}
 
 \section[Cuándo crear (y no crear) un índice]{\emj{💡}~Cuándo crear (y no crear) un índice}
 
-El criterio principal para crear un índice es la \textbf{selectividad}: qué fracción de la tabla retorna la condición filtro.
-Un índice en una columna booleana con 50/50 de valores no ayuda; el optimizador preferirá Seq Scan de todas formas.
+La \textbf{selectividad} es el factor más importante: un índice es útil cuando filtra una fracción pequeña de las filas.
+Si una condición retorna el 50\% de las filas, un Seq Scan puede ser más eficiente que un Index Scan porque lee el heap secuencialmente (más amigable con el cache de disco).
+El planificador de PostgreSQL conoce estadísticas de distribución de valores y decide automáticamente cuándo usar el índice.
 
 \begin{tipbox}{Reglas prácticas para índices}
 \textbf{Crea índice en:}
 \begin{itemize}
-  \item Columnas en \texttt{WHERE} con alta selectividad y consultas frecuentes
-  \item FK --- PostgreSQL \emph{no} las indexa automáticamente, a diferencia de MySQL
-  \item Columnas en \texttt{JOIN} y \texttt{ORDER BY} con muchos registros
+  \item Columnas en \texttt{WHERE} con alta selectividad (pocos resultados de muchas filas)
+  \item Columnas de FK — PostgreSQL \emph{no} las indexa automáticamente; MySQL sí
+  \item Columnas en \texttt{JOIN ON} y \texttt{ORDER BY} en queries frecuentes con tablas grandes
+  \item Columnas de búsqueda full-text (índice GIN con \texttt{to\_tsvector})
 \end{itemize}
 \textbf{No crees índice en:}
 \begin{itemize}
-  \item Tablas pequeñas (< 1000 filas): Seq Scan es más rápido
-  \item Columnas con baja cardinalidad (boolean, status con 3 valores)
-  \item Columnas que se actualizan constantemente (costo de mantenimiento supera la ganancia)
+  \item Tablas con menos de 1{,}000 filas — el planificador preferirá Seq Scan de todas formas
+  \item Columnas con cardinalidad muy baja: booleans, \texttt{status} con 3 valores posibles
+  \item Columnas que se actualizan muy frecuentemente — el costo de mantenimiento supera la ganancia de lectura
+  \item Columnas raramente usadas en \texttt{WHERE} — el índice ocupa espacio y ralentiza escrituras sin beneficio
 \end{itemize}
 \end{tipbox}
 

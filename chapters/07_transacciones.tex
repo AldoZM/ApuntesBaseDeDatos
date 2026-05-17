@@ -2,50 +2,74 @@
 
 \section[ACID]{\emj{⚗️}~ACID}
 
-Una transacción es un conjunto de operaciones que se ejecutan como una unidad indivisible.
-ACID es el conjunto de propiedades que garantizan que las transacciones son confiables incluso ante fallos del sistema o acceso concurrente.
-Estas propiedades son el fundamento de cualquier sistema financiero, de inventario o de misión crítica.
+Una transacción es una secuencia de operaciones que el DBMS trata como una unidad indivisible: o todas se completan exitosamente, o ninguna tiene efecto.
+Las propiedades ACID son las garantías que hacen a las transacciones confiables incluso en presencia de fallos del sistema, cortes de energía o acceso concurrente de miles de usuarios simultáneos.
+
+ACID no es magia: es el resultado de mecanismos concretos implementados por el DBMS.
+Atomicidad usa undo logs; Durabilidad usa WAL (Write-Ahead Log); Aislamiento usa locks o MVCC; Consistencia es responsabilidad compartida entre el DBMS (constraints) y la aplicación (lógica de negocio).
 
 \begin{teoriabox}{ACID explicado con transferencia bancaria}
-Transferir \$1000 de la cuenta A a la cuenta B involucra dos operaciones:
-(1) restar \$1000 de A y (2) sumar \$1000 a B.
+Transferir \$1{,}000 de la cuenta A a la cuenta B requiere dos operaciones:
+(1) restar \$1{,}000 de A y (2) sumar \$1{,}000 a B.
 
 \begin{itemize}
-  \item \textbf{Atomicidad:} si el sistema falla entre (1) y (2), se revierten ambas. Nunca el dinero desaparece ``a la mitad''.
-  \item \textbf{Consistencia:} la suma total del dinero en el sistema es la misma antes y después. Los constraints (saldo $\geq 0$) se respetan.
-  \item \textbf{Aislamiento:} otra transacción que consulte el saldo de A durante la transferencia no ve el estado intermedio.
-  \item \textbf{Durabilidad:} una vez que el COMMIT se confirma, los cambios persisten aunque el servidor se apague inmediatamente después (gracias al WAL).
+  \item \textbf{Atomicidad:} si el servidor se cae entre (1) y (2), al reiniciar el DBMS deshace la operación (1) usando el undo log. El dinero no desaparece ``a la mitad''. O ambas operaciones ocurren, o ninguna.
+
+  \item \textbf{Consistencia:} la suma total del dinero en el sistema es idéntica antes y después. Ningún constraint se viola durante ni después de la transacción. Si A no tiene saldo suficiente y hay un CHECK constraint, la transacción falla completa.
+
+  \item \textbf{Aislamiento:} si otra transacción consulta el saldo de A mientras la transferencia está en curso, no ve el estado intermedio (A descontado, B sin acreditar). Ve o el estado antes de la transferencia, o el estado después — nunca el estado a medias.
+
+  \item \textbf{Durabilidad:} una vez que el \texttt{COMMIT} regresa con éxito, los cambios están en el WAL en disco. Aunque el servidor se apague inmediatamente, al reiniciar el DBMS replaya el WAL y los datos están ahí.
 \end{itemize}
 \end{teoriabox}
 
 \section[Niveles de aislamiento]{\emj{🛡️}~Niveles de aislamiento}
 
-El aislamiento tiene un costo: mayor aislamiento implica más locks y menor concurrencia.
-El estándar SQL define cuatro niveles; PostgreSQL implementa tres efectivos (Read Uncommitted se comporta como Read Committed).
+El aislamiento perfecto (serializable) implicaría que las transacciones se ejecuten como si fueran estrictamente secuenciales.
+Esto sería correcto pero extremadamente lento: no habría concurrencia real.
+Los niveles de aislamiento son el compromiso entre correctitud y rendimiento: mayor aislamiento = más correctitud, menos concurrencia.
 
+El estándar SQL define cuatro anomalías que los niveles de aislamiento previenen o permiten:
 \begin{itemize}
-  \item \textbf{Read Uncommitted:} no existe en PG (se comporta como Read Committed)
-  \item \textbf{Read Committed:} default en PG. Ve solo datos confirmados. Sujeto a \emph{non-repeatable reads}.
-  \item \textbf{Repeatable Read:} la misma fila devuelve el mismo valor en toda la transacción. Previene non-repeatable reads.
-  \item \textbf{Serializable:} aislamiento total equivalente a ejecución serial. Más lento; detecta anomalías serializables.
+  \item \textbf{Dirty Read:} una transacción lee datos de otra que aún no hizo COMMIT. Si la segunda hace ROLLBACK, la primera leyó datos que nunca existieron.
+  \item \textbf{Non-Repeatable Read:} una transacción lee la misma fila dos veces y obtiene valores distintos porque otra transacción la modificó entre lecturas.
+  \item \textbf{Phantom Read:} una transacción ejecuta la misma query dos veces y obtiene filas distintas porque otra transacción insertó o eliminó filas que cumplen el filtro.
+  \item \textbf{Serialization Anomaly:} el resultado de ejecutar transacciones concurrentemente no es posible obtenerlo con ningún orden serial de las mismas transacciones.
 \end{itemize}
 
-\begin{tipbox}{¿Qué nivel usar?}
-\textbf{Read Committed} cubre el 95\% de los casos.
-Usa \textbf{Repeatable Read} cuando una transacción hace múltiples lecturas de los mismos datos y necesita consistencia (reportes financieros).
-Usa \textbf{Serializable} solo cuando la correctitud lógica lo exija; tiene overhead significativo.
+Los cuatro niveles de aislamiento en PostgreSQL:
+\begin{itemize}
+  \item \textbf{Read Uncommitted:} en PostgreSQL se trata igual que Read Committed (no existe dirty read en PG).
+  \item \textbf{Read Committed (default PG):} cada sentencia ve solo los datos que estaban confirmados al momento de iniciar esa sentencia. Permite non-repeatable reads.
+  \item \textbf{Repeatable Read:} la transacción ve un snapshot fijo del momento en que inició. Mismo valor al releer la misma fila. Previene dirty y non-repeatable reads. En PG también previene phantom reads.
+  \item \textbf{Serializable:} garantía máxima. PG detecta ciclos de dependencia entre transacciones concurrentes y aborta las que crearían anomalías de serialización.
+\end{itemize}
+
+\begin{tipbox}{¿Qué nivel usar en la práctica?}
+\textbf{Read Committed} (default) cubre el 95\% de los casos de aplicaciones web.
+Usa \textbf{Repeatable Read} cuando una transacción hace múltiples lecturas del mismo dato y la inconsistencia entre ellas causaría lógica incorrecta (reportes financieros, cálculos que dependen de varios SELECTs).
+Usa \textbf{Serializable} solo cuando la correctitud lógica de la operación dependa de ausencia total de interferencia concurrente. Tiene overhead de detección de conflictos y puede generar más errores que requieren retry.
 \end{tipbox}
 
 \section[Locks y Deadlocks]{\emj{⚠️}~Locks y Deadlocks}
 
-PostgreSQL usa MVCC (Multi-Version Concurrency Control): las lecturas nunca bloquean escrituras y las escrituras nunca bloquean lecturas.
-Cada transacción ve un snapshot consistente de la BD al momento de inicio.
-Los deadlocks ocurren cuando dos transacciones se esperan mutuamente; PostgreSQL los detecta y aborta la más joven.
+PostgreSQL usa \textbf{MVCC} (Multi-Version Concurrency Control) como mecanismo principal de concurrencia.
+En MVCC, en lugar de bloquear filas para lectura, el motor mantiene múltiples versiones de cada fila.
+Cada transacción ve un snapshot consistente de la BD al momento de su inicio, sin necesidad de locks de lectura.
+Esto elimina el clásico problema de lecturas que bloquean escrituras y viceversa.
 
-\begin{warningbox}{Deadlocks y cómo prevenirlos}
-El deadlock clásico: T1 bloquea fila A y espera la B; T2 bloquea fila B y espera la A.
-Prevención: acceder siempre a los recursos en el \textbf{mismo orden} en todas las transacciones.
-Si T1 y T2 siempre bloquean A antes que B, el deadlock es imposible.
+Sin embargo, dos escrituras concurrentes sobre la misma fila sí requieren coordinación.
+PostgreSQL usa locks a nivel de fila para escrituras: la segunda escritura espera a que la primera haga COMMIT o ROLLBACK.
+
+Un \textbf{deadlock} ocurre cuando dos o más transacciones forman un ciclo de espera: T1 espera un lock que tiene T2, y T2 espera un lock que tiene T1.
+Ninguna puede avanzar indefinidamente.
+PostgreSQL detecta estos ciclos periódicamente y aborta la transacción más joven (menor costo de rollback), retornando un error al cliente para que reintente.
+
+\begin{warningbox}{Cómo prevenir deadlocks}
+La causa raíz de casi todos los deadlocks es acceder a recursos (filas, tablas) en órdenes distintos en transacciones diferentes.
+Solución: establecer y documentar un \textbf{orden canónico} de acceso a recursos en toda la aplicación.
+Si T1 y T2 siempre adquieren locks en el orden Recurso A $\to$ Recurso B, el deadlock es matemáticamente imposible.
+Además: mantener las transacciones lo más cortas posible y nunca esperar input del usuario dentro de una transacción abierta.
 \end{warningbox}
 
 \begin{lstlisting}[caption={BEGIN, COMMIT, ROLLBACK, SAVEPOINT}]

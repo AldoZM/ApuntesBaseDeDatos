@@ -2,46 +2,77 @@
 
 \section[Sublanguages SQL]{\emj{🧠}~Sublanguages SQL}
 
-SQL es un lenguaje declarativo: describes \emph{qué} quieres, no \emph{cómo} obtenerlo.
-El motor decide el plan de ejecución óptimo.
-Se divide en cinco sublanguages según el tipo de operación:
+SQL (Structured Query Language) es un lenguaje \textbf{declarativo}: describes \emph{qué} resultado quieres, no \emph{cómo} calcularlo.
+El motor de base de datos recibe tu consulta, la analiza, genera un plan de ejecución óptimo y lo ejecuta.
+Esta abstracción es poderosa: el mismo SQL puede ejecutarse de formas físicas completamente distintas dependiendo de los índices disponibles, el tamaño de las tablas y las estadísticas del optimizador.
 
-\begin{teoriabox}{Los cinco sublanguages}
+SQL se divide en cinco sublanguages según el tipo de operación que realizan.
+Conocer esta división ayuda a entender qué efecto tiene cada comando y si puede o no revertirse con un ROLLBACK.
+
+\begin{teoriabox}{Los cinco sublanguages de SQL}
 \begin{itemize}
-  \item \textbf{DDL} (Data Definition Language): estructura — \texttt{CREATE, ALTER, DROP, TRUNCATE}
-  \item \textbf{DML} (Data Manipulation Language): datos — \texttt{INSERT, UPDATE, DELETE}
-  \item \textbf{DQL} (Data Query Language): consultas — \texttt{SELECT}
-  \item \textbf{DCL} (Data Control Language): permisos — \texttt{GRANT, REVOKE}
-  \item \textbf{TCL} (Transaction Control): transacciones — \texttt{BEGIN, COMMIT, ROLLBACK, SAVEPOINT}
+  \item \textbf{DDL} (Data Definition Language): define la \emph{estructura} del esquema.
+    \texttt{CREATE, ALTER, DROP, TRUNCATE, RENAME}. En la mayoría de DBMS es auto-commit (no revertible), pero en PostgreSQL el DDL sí es transaccional.
+  \item \textbf{DML} (Data Manipulation Language): manipula los \emph{datos} dentro de las estructuras.
+    \texttt{INSERT, UPDATE, DELETE, MERGE}. Siempre dentro de una transacción; reversible con ROLLBACK.
+  \item \textbf{DQL} (Data Query Language): consulta datos sin modificarlos.
+    \texttt{SELECT}. El comando más complejo y usado de SQL.
+  \item \textbf{DCL} (Data Control Language): controla \emph{permisos} de acceso.
+    \texttt{GRANT, REVOKE}. Define quién puede hacer qué sobre qué objetos.
+  \item \textbf{TCL} (Transaction Control Language): gestiona \emph{transacciones}.
+    \texttt{BEGIN, COMMIT, ROLLBACK, SAVEPOINT, RELEASE SAVEPOINT}.
 \end{itemize}
-DDL es auto-commit en la mayoría de los DBMS: un \texttt{DROP TABLE} no puede hacerse \texttt{ROLLBACK} una vez ejecutado (excepto en PostgreSQL, donde DDL sí es transaccional).
+La distinción entre DDL y DML importa porque un \texttt{DROP TABLE} en la mayoría de DBMS no puede revertirse aunque estés dentro de una transacción. PostgreSQL es la excepción: su DDL transaccional permite \texttt{ROLLBACK} de un \texttt{DROP TABLE}.
 \end{teoriabox}
 
 \section[DDL --- definir estructura]{\emj{🏗️}~DDL --- definir estructura}
 
-El DDL define el esquema: qué tablas existen, qué columnas tienen y qué constraints las gobiernan.
-Los constraints se pueden definir inline (junto a la columna) o como constraints de tabla separados.
-\texttt{TRUNCATE} es más rápido que \texttt{DELETE} porque no genera undo log fila por fila, pero no puede ser filtrado con \texttt{WHERE}.
+El DDL define el \textbf{esquema}: la estructura de las tablas, sus columnas, tipos de datos y las reglas (constraints) que gobiernan qué valores son válidos.
+Un buen esquema con constraints bien definidos es la primera línea de defensa de integridad de datos: previene datos inválidos a nivel de motor, sin depender de que la aplicación los valide correctamente.
 
+Los \textbf{constraints} son reglas que el DBMS enforcea en cada operación:
 \begin{itemize}
-  \item \texttt{CREATE TABLE} define el esquema; constraints inline o separados
-  \item \texttt{ALTER TABLE} modifica columnas, agrega/quita constraints sin recrear la tabla
-  \item \texttt{TRUNCATE} vacía la tabla rápido (no dispara triggers fila por fila)
-  \item \texttt{DROP} elimina objeto permanentemente --- irreversible fuera de transacción
+  \item \texttt{PRIMARY KEY:} identifica unívocamente cada fila; NOT NULL + UNIQUE implícitos
+  \item \texttt{UNIQUE:} no permite valores duplicados en la columna o combinación de columnas
+  \item \texttt{NOT NULL:} la columna debe tener valor; nunca puede ser NULL
+  \item \texttt{CHECK:} condición booleana que cada valor debe cumplir (ej. \texttt{precio > 0})
+  \item \texttt{DEFAULT:} valor que se usa si no se especifica uno en el INSERT
+  \item \texttt{FOREIGN KEY:} establece relación con otra tabla; garantiza integridad referencial
 \end{itemize}
+
+\texttt{ALTER TABLE} permite modificar la estructura de una tabla existente sin recrearla.
+En tablas grandes (millones de filas), algunas operaciones de ALTER pueden ser costosas porque requieren reescribir toda la tabla o bloquear escrituras durante la operación.
+Agregar una columna nullable es barato; agregar una columna NOT NULL sin DEFAULT requiere actualizar cada fila existente.
 
 \section[DML + DQL --- manipular y consultar]{\emj{🔎}~DML + DQL --- manipular y consultar}
 
-\texttt{SELECT} es el comando más complejo de SQL.
-Su orden de escritura no es el orden de evaluación:
-se escribe \texttt{SELECT} primero pero se evalúa casi al último.
-Entender este orden es clave para saber qué puedes referenciar en cada cláusula.
+El \texttt{SELECT} es el comando más complejo de SQL porque su sintaxis no refleja el orden en que se ejecuta.
+Se escribe en el orden: SELECT → FROM → WHERE → GROUP BY → HAVING → ORDER BY → LIMIT.
+Pero el motor lo evalúa en un orden completamente distinto, y entender ese orden es crítico para evitar errores y escribir consultas eficientes.
 
 \begin{tipbox}{Orden lógico de evaluación de SELECT}
-\texttt{FROM} → \texttt{JOIN} → \texttt{WHERE} → \texttt{GROUP BY} → \texttt{HAVING} → \texttt{SELECT} → \texttt{ORDER BY} → \texttt{LIMIT}
-
-Por eso no puedes usar un alias definido en \texttt{SELECT} dentro de \texttt{WHERE}: \texttt{WHERE} se evalúa antes de \texttt{SELECT}.
+El motor evalúa en este orden:
+\begin{enumerate}
+  \item \texttt{FROM} + \texttt{JOIN}: determina el conjunto de filas base
+  \item \texttt{WHERE}: filtra filas del conjunto base (opera sobre columnas reales, no aliases)
+  \item \texttt{GROUP BY}: agrupa las filas filtradas
+  \item \texttt{HAVING}: filtra grupos (puede referenciar funciones de agregación)
+  \item \texttt{SELECT}: calcula las expresiones y aliases de salida
+  \item \texttt{ORDER BY}: ordena el resultado (puede usar aliases del SELECT)
+  \item \texttt{LIMIT / OFFSET}: recorta el resultado final
+\end{enumerate}
+Consecuencia práctica: no puedes usar un alias definido en \texttt{SELECT} dentro de \texttt{WHERE}, porque WHERE se evalúa antes. Pero sí puedes usarlo en \texttt{ORDER BY}.
 \end{tipbox}
+
+Los \textbf{JOINs} combinan filas de dos tablas según una condición.
+El tipo de JOIN determina qué pasa cuando no hay coincidencia:
+\begin{itemize}
+  \item \textbf{INNER JOIN:} solo filas que coinciden en ambas tablas. Excluye los que no tienen par.
+  \item \textbf{LEFT JOIN:} todas las filas de la tabla izquierda; NULL en columnas de la derecha si no hay coincidencia.
+  \item \textbf{RIGHT JOIN:} todas las filas de la derecha; NULL en la izquierda si no hay coincidencia. (Equivalente a LEFT JOIN con tablas invertidas.)
+  \item \textbf{FULL OUTER JOIN:} todas las filas de ambas tablas; NULL donde no hay coincidencia.
+  \item \textbf{CROSS JOIN:} producto cartesiano — cada fila de la izquierda con cada fila de la derecha.
+\end{itemize}
 
 \begin{lstlisting}[caption={DDL: CREATE, ALTER, DROP}]
 -- Crear tabla con constraints
