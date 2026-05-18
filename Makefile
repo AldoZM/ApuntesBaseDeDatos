@@ -3,7 +3,7 @@ PUML_SRC  := images/src_plantuml
 PUML_OUT  := images/diagrams
 PUML_FILES := $(wildcard $(PUML_SRC)/*.puml)
 PNG_FILES  := $(patsubst $(PUML_SRC)/%.puml,$(PUML_OUT)/%.png,$(PUML_FILES))
-MAIN      := main
+MAIN      := ApuntesBaseDeDatos
 
 .PHONY: all diagrams clean
 

@@ -1,8 +1,6 @@
-% preamble.tex
-% LuaLaTeX: no necesita inputenc/fontenc, maneja UTF-8 nativamente
+﻿% preamble.tex
 \usepackage{fontspec}
 \usepackage[spanish, es-noquoting, es-noshorthands]{babel}
-% Emoji via Segoe UI Emoji (disponible en Windows 10+)
 \newfontfamily{\emojifont}{Segoe UI Emoji}[Renderer=HarfBuzz, BoldFont=*]
 \newcommand{\emj}[1]{{\emojifont #1}}
 \usepackage[a4paper, top=2.5cm, bottom=2.5cm, left=3cm, right=2.5cm]{geometry}
@@ -13,7 +11,7 @@
 \usepackage{listings}
 \usepackage{tcolorbox}
 \usepackage{tikz}
-\usetikzlibrary{arrows, positioning}
+\usetikzlibrary{arrows, positioning, babel}
 \usepackage{graphicx}
 \usepackage{booktabs}
 \usepackage{enumitem}
@@ -22,38 +20,55 @@
 
 \tcbuselibrary{skins, breakable, listings}
 
-% ─── Colores ───────────────────────────────────────────────────────────────────
-\definecolor{azulclaro}{RGB}{219, 234, 254}
-\definecolor{azuloscu}{RGB}{30, 64, 175}
-\definecolor{grisclaro}{RGB}{243, 244, 246}
-\definecolor{grisoscu}{RGB}{55, 65, 81}
-\definecolor{verdeclaro}{RGB}{209, 250, 229}
-\definecolor{verdeoscu}{RGB}{6, 95, 70}
-\definecolor{naranjaclar}{RGB}{255, 237, 213}
-\definecolor{naranjaoscu}{RGB}{154, 52, 18}
-\definecolor{rojoclaro}{RGB}{254, 226, 226}
-\definecolor{rojooscu}{RGB}{153, 27, 27}
-\definecolor{amarilloclaro}{RGB}{254, 249, 195}
-\definecolor{amarillooscu}{RGB}{113, 63, 18}
-\definecolor{sqlkeyword}{RGB}{37, 99, 235}
-\definecolor{sqlcomment}{RGB}{107, 114, 128}
-\definecolor{sqlstring}{RGB}{22, 163, 74}
+% --- Colores Neon Puros ---
+\definecolor{n-cyan}{RGB}{0, 255, 255}
+\definecolor{n-lime}{RGB}{0, 255, 0}
+\definecolor{n-pink}{RGB}{255, 0, 255}
+\definecolor{n-yellow}{RGB}{255, 255, 0}
+\definecolor{n-orange}{RGB}{255, 128, 0}
 
-% ─── Listings SQL ──────────────────────────────────────────────────────────────
+% --- Colores de Apoyo ---
+\definecolor{azuloscu}{RGB}{30, 64, 175}
+\definecolor{verdeoscu}{RGB}{6, 95, 70}
+\definecolor{naranjaoscu}{RGB}{154, 52, 18}
+\definecolor{rojooscu}{RGB}{153, 27, 27}
+\definecolor{amarillooscu}{RGB}{113, 63, 18}
+\definecolor{grisclaro}{RGB}{200, 200, 200}
+\definecolor{sqlcomment}{RGB}{120, 120, 120}
+
+% --- MODO OSCURO GLOBAL ---
+\pagecolor{black}
+\color{white}
+\makeatletter
+\colorlet{normalcolor@tmp}{white}
+\def\normalcolor{\color{normalcolor@tmp}}
+\makeatother
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=n-cyan,
+  urlcolor=n-lime,
+  citecolor=grisclaro,
+  pdftitle={Apuntes de Bases de Datos},
+  pdfauthor={Aldo Zetina Muci\~no},
+}
+
+% --- Estilo de Codigo (SQL) - Maximo Contraste ---
 \lstdefinestyle{sql}{
   language=SQL,
-  basicstyle=\ttfamily\small,
-  keywordstyle=\color{sqlkeyword}\bfseries,
+  basicstyle=\ttfamily\small\color{white},
+  keywordstyle=\color{n-cyan}\bfseries,
   commentstyle=\color{sqlcomment}\itshape,
-  stringstyle=\color{sqlstring},
+  stringstyle=\color{n-lime},
+  identifierstyle=\color{n-pink},
+  numberstyle=\tiny\color{n-yellow},
   showstringspaces=false,
   breaklines=true,
   frame=single,
-  framerule=0.5pt,
-  rulecolor=\color{grisoscu},
-  backgroundcolor=\color{grisclaro},
+  framerule=0.6pt,
+  rulecolor=\color{white},
+  backgroundcolor=\color{black!94!white},
   numbers=left,
-  numberstyle=\tiny\color{sqlcomment},
   numbersep=8pt,
   tabsize=2,
   morekeywords={SERIAL, RETURNING, EXPLAIN, ANALYZE, VACUUM, CONCURRENTLY,
@@ -64,10 +79,11 @@
 }
 \lstset{style=sql}
 
-% ─── tcolorbox styles ──────────────────────────────────────────────────────────
+% --- tcolorbox styles (Corregidos) ---
 \newtcolorbox{teoriabox}[1]{
-  colback=azulclaro,
+  colback=azuloscu!30!black,
   colframe=azuloscu,
+  colupper=white,
   fonttitle=\bfseries,
   title={\emj{🧠}~#1},
   breakable,
@@ -75,8 +91,9 @@
 }
 
 \newtcolorbox{diagramabox}[1]{
-  colback=verdeclaro,
+  colback=verdeoscu!30!black,
   colframe=verdeoscu,
+  colupper=white,
   fonttitle=\bfseries,
   title={\emj{📊}~#1},
   breakable,
@@ -84,17 +101,19 @@
 }
 
 \newtcolorbox{entrevistabox}{
-  colback=naranjaclar,
+  colback=naranjaoscu!30!black,
   colframe=naranjaoscu,
+  colupper=white,
   fonttitle=\bfseries,
-  title={\emj{🎤}~Preguntas típicas},
+  title={\emj{🎙️}~Preguntas típicas},
   breakable,
   before upper={\parskip=4pt}
 }
 
 \newtcolorbox{warningbox}[1]{
-  colback=rojoclaro,
+  colback=rojooscu!30!black,
   colframe=rojooscu,
+  colupper=white,
   fonttitle=\bfseries,
   title={\emj{⚠️}~#1},
   breakable,
@@ -102,33 +121,24 @@
 }
 
 \newtcolorbox{tipbox}[1]{
-  colback=amarilloclaro,
+  colback=amarillooscu!30!black,
   colframe=amarillooscu,
+  colupper=white,
   fonttitle=\bfseries,
   title={\emj{💡}~#1},
   breakable,
   before upper={\parskip=4pt}
 }
 
-% ─── Capítulos: reducir espacio superior ───────────────────────────────────────
+% --- Formato Capitulos ---
 \titleformat{\chapter}[display]
   {\normalfont\huge\bfseries}{\chaptertitlename\ \thechapter}{12pt}{\Huge}
 \titlespacing*{\chapter}{0pt}{0pt}{16pt}
 
-% ─── Encabezados/pies ──────────────────────────────────────────────────────────
+% --- Encabezados ---
 \pagestyle{fancy}
 \fancyhf{}
 \fancyhead[LE,RO]{\thepage}
 \fancyhead[LO]{\nouppercase{\rightmark}}
 \fancyhead[RE]{\nouppercase{\leftmark}}
 \renewcommand{\headrulewidth}{0.4pt}
-
-% ─── Hyperref ──────────────────────────────────────────────────────────────────
-\hypersetup{
-  colorlinks=true,
-  linkcolor=azuloscu,
-  urlcolor=verdeoscu,
-  citecolor=grisoscu,
-  pdftitle={Apuntes DBA},
-  pdfauthor={Aldo Zetina Muci\~no},
-}
