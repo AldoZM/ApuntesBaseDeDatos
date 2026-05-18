@@ -1,14 +1,3 @@
-# LaTeX compilados
-*.aux
-*.log
-*.toc
-*.out
-*.fls
-*.fdb_latexmk
-*.synctex.gz
-
-# Imágenes generadas (se regeneran con make)
-images/diagrams/*.png
-
-# PlantUML jar (usuario lo descarga)
-*.jar
+# Archivos temporales del sistema
+.DS_Store
+Thumbs.db

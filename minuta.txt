@@ -1,0 +1,23 @@
+# Minuta de Trabajo - Supervisión de Claude Code
+
+## Hecho
+- [x] **Monitoreo y Auditoría**: Supervisión continua del flujo de trabajo de CC.
+- [x] **Construcción de Contenido (Completo)**: 
+    - 14 capítulos generados con estructura de Teoría, SQL y Entrevistas.
+    - **Último avance**: Expansión masiva de la prosa y explicación conceptual en todos los capítulos para mayor profundidad.
+- [x] **Infraestructura LaTeX (Finalizado)**: 
+    - `main.tex`, `preamble.tex` y `Makefile` configurados.
+    - Cambio a `LuaLaTeX` para soporte de emojis y corrección de `babel`.
+- [x] **Diagramas (Stubs)**: 7 archivos `.puml` listos.
+- [x] **Sincronización Git**: Todo el trabajo subido a GitHub (`origin/main`).
+
+## En progreso
+- [ ] Revisión final del renderizado del PDF.
+
+## Pendiente
+- [ ] Generación de PNGs y cierre formal.
+
+## Rutas de archivos modificados
+- `minuta.txt` (Actualización final tras expansión de teoría)
+- `chapters/*.tex` (Contenido ampliado)
+- Historial de 11 commits registrados.
