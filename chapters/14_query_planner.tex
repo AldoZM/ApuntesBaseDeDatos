@@ -108,6 +108,10 @@ GROUP BY o.id, c.name;
 -- loops=N → si > 1: este nodo se repite N veces (nested loop)
 \end{lstlisting}
 
+La diferencia entre filas estimadas y reales es la señal más importante en un EXPLAIN ANALYZE.
+Cuando el planner estima 5 filas pero en realidad hay 45,000, toda la cadena de decisiones (qué método de join, qué tipo de scan, si usar índice) se toma con información incorrecta.
+El resultado puede ser un plan que funciona bien en staging (con datos de muestra) y explota en producción (con distribución real de datos).
+
 \begin{lstlisting}[caption={Detectar estimaciones malas}]
 -- Si "rows estimado" difiere 10x+ de "rows actual": problema de stats
 -- Ejemplo de plan malo:
@@ -124,6 +128,10 @@ SELECT * FROM orders WHERE customer_id = 42;
 
 \section[Métodos de acceso a datos]{\emj{📁}~Métodos de acceso a datos}
 
+Cuando el planner necesita leer filas de una tabla, elige entre varios \emph{métodos de acceso}.
+La decisión depende de cuántas filas se esperan retornar (selectividad), si existe un índice aplicable, cuántas páginas tiene la tabla, y qué tan ordenados físicamente están los datos.
+Entender estos métodos es clave para interpretar un EXPLAIN y saber si el plan elegido es óptimo.
+
 \begin{teoriabox}{Seq Scan vs Index Scan vs Index Only Scan}
 \begin{itemize}
   \item \textbf{Seq Scan:} lee cada página de la tabla en orden. Costo fijo por página. Mejor cuando se leen $>$20--30\% de las filas.
@@ -132,6 +140,10 @@ SELECT * FROM orders WHERE customer_id = 42;
   \item \textbf{Bitmap Index Scan:} acumula TIDs del índice en un bitmap, luego hace heap fetches ordenados por bloque físico. Reduce I/O aleatorio. Aparece cuando el planner espera muchos hits de índice.
 \end{itemize}
 \end{teoriabox}
+
+A veces es útil forzar al planner a usar un método alternativo para comparar cuál es más rápido en la práctica.
+Esto \textbf{nunca debe hacerse en producción de forma permanente}: solo sirve para diagnóstico.
+Si el planner elige un plan malo incluso después de ANALYZE, el problema real suele ser estadísticas desactualizadas o un \texttt{statistics target} muy bajo.
 
 \begin{lstlisting}[caption={Forcing plan methods (debugging solamente)}]
 -- Deshabilitar métodos para comparar planes:
@@ -149,6 +161,10 @@ RESET enable_hashjoin;
 
 \section[Tipos de Join]{\emj{🔗}~Tipos de Join}
 
+Cuando una query une dos o más tablas, el planner debe elegir un \emph{algoritmo de join}.
+Esta es una de las decisiones más costosas porque depende del tamaño de ambas relaciones, la disponibilidad de índices, la cantidad de \texttt{work\_mem} disponible, y si los datos ya vienen ordenados.
+Un join mal elegido puede convertir una query de 50ms en una de 50 segundos.
+
 \begin{teoriabox}{Nested Loop vs Hash Join vs Merge Join}
 \begin{itemize}
   \item \textbf{Nested Loop:} para cada fila del outer, busca en el inner. Costo $O(N \times M)$ sin índice. Con índice en inner: $O(N \times \log M)$. Ideal cuando outer es pequeño y inner tiene índice.
@@ -156,6 +172,11 @@ RESET enable_hashjoin;
   \item \textbf{Merge Join:} ambas relaciones ordenadas → un solo pasado. Costo $O(N \log N + M \log M)$ si hay que ordenar. Ideal cuando ambas entradas ya vienen ordenadas (por índice o SORT previo).
 \end{itemize}
 \end{teoriabox}
+
+El Hash Join es el algoritmo más común para joins entre tablas grandes sin índices.
+PG construye un hash table con la tabla más pequeña (inner), luego itera la tabla grande (outer) calculando el hash de cada fila para encontrar coincidencias.
+El problema ocurre cuando el hash table no cabe en \texttt{work\_mem}: PG lo derrama a disco en ``batches'', multiplicando el I/O.
+El síntoma aparece en EXPLAIN ANALYZE como \texttt{Batches: N} donde $N > 1$.
 
 \begin{lstlisting}[caption={work\_mem y Hash Join}]
 -- Si hash join usa disco (spill), aumentar work_mem:

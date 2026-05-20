@@ -59,6 +59,15 @@ VACUUM FULL orders;
 
 Bloat ocurre cuando vacuum no puede reclamar espacio porque hay transacciones largas activas, o cuando el espacio muerto no se reutiliza por la estructura física de páginas.
 
+El \texttt{fill\_factor} es la solución preventiva al bloat causado por UPDATEs frecuentes.
+PostgreSQL organiza los datos en páginas de 8KB. Por defecto, cada página se llena al 100\% con filas nuevas.
+Cuando se hace UPDATE, la fila vieja queda muerta en su página original, y la nueva se escribe en una página distinta si no hay espacio libre.
+Esto obliga al índice a apuntar a la nueva ubicación (heap fetch costoso) y acumula dead tuples rápidamente.
+
+Con \texttt{fill\_factor = 70}, PG deja 30\% de cada página libre al insertar.
+Cuando llega un UPDATE, si la nueva versión de la fila cabe en el espacio libre de \emph{la misma página}, se realiza un \textbf{HOT update} (Heap-Only Tuple): no se actualiza el índice, no hay heap fetch adicional, y el dead tuple se puede reclamar en la misma página sin VACUUM completo.
+El resultado: menos bloat, índices más estables, y updates más rápidos.
+
 \begin{lstlisting}[caption={fill\_factor para tablas con muchos UPDATEs}]
 -- fill_factor: qué porcentaje de cada página se llena al INSERT.
 -- El resto se reserva para UPDATEs "in-page" (HOT updates).
@@ -124,6 +133,15 @@ SHOW SERVERS;  -- conexiones a PostgreSQL activas
 
 \section[Índices Avanzados]{\emj{📑}~Índices Avanzados}
 
+Un índice estándar de B-tree en PostgreSQL indexa \emph{todas} las filas de una columna.
+Pero existen tres variantes avanzadas que pueden ser órdenes de magnitud más eficientes dependiendo del patrón de acceso:
+
+\begin{itemize}
+  \item \textbf{Partial index:} solo indexa las filas que cumplen una condición WHERE. Si el 95\% de las órdenes están ``completed'' y solo consultas frecuentes son sobre ``pending'' (el 5\%), un índice parcial sobre pending es 20 veces más pequeño y se actualiza 20 veces menos.
+  \item \textbf{Expression index:} indexa el resultado de una función, no el valor crudo. Útil cuando la query siempre aplica la misma transformación (ej: \texttt{lower(email)} para búsquedas case-insensitive). Sin este índice, la función se evalúa en cada fila durante el seq scan.
+  \item \textbf{Covering index (INCLUDE):} incluye columnas adicionales dentro del índice sin que sean parte de la clave de búsqueda. Permite que el planner satisfaga la query completamente desde el índice (Index Only Scan), sin tocar el heap (la tabla principal). Esto elimina el costo de random I/O de los heap fetches.
+\end{itemize}
+
 \begin{lstlisting}[caption={Partial, expression y covering indexes}]
 -- Partial index: solo indexa las filas que cumplen la condición
 -- Mucho más pequeño y mantenido solo cuando aplica el WHERE
@@ -151,6 +169,10 @@ CREATE INDEX CONCURRENTLY idx_items_order_id ON items (order_id);
 -- Tarda más, pero la tabla sigue accesible
 \end{lstlisting}
 
+Un índice nunca usado no es gratuito: PostgreSQL debe actualizarlo en cada INSERT, UPDATE y DELETE sobre la tabla.
+Un índice de 10GB que nadie usa consume esa RAM en el buffer cache, agrega write amplification en cada transacción, y ralentiza VACUUM.
+Las siguientes queries identifican índices candidatos a eliminación y tablas que podrían beneficiarse de nuevos índices:
+
 \begin{lstlisting}[caption={Detectar índices ineficientes}]
 -- Índices nunca usados:
 SELECT schemaname, relname, indexrelname, idx_scan, idx_tup_read
@@ -173,6 +195,12 @@ ORDER BY pg_relation_size(indexrelid) DESC;
 \end{lstlisting}
 
 \section[work\_mem y shared\_buffers]{\emj{💾}~work\_mem y shared\_buffers}
+
+La memoria es el parámetro de mayor impacto en el rendimiento de PostgreSQL.
+A diferencia de otros sistemas, PG no tiene un único pool de memoria central: cada operación (sort, hash join, hash aggregate) toma su propia porción de \texttt{work\_mem}.
+Esto significa que la memoria total consumida puede escalar con el número de conexiones y la complejidad de las queries.
+
+Entender cada parámetro y su relación es fundamental antes de tocar \texttt{postgresql.conf}: un ajuste mal calculado de \texttt{work\_mem} puede llevar el servidor a OOM (Out of Memory) y matar el proceso de PG.
 
 \begin{teoriabox}{Parámetros de memoria críticos}
 \begin{itemize}

@@ -18,6 +18,10 @@ En Event Sourcing, se guarda la \textbf{historia de eventos}; el estado actual s
 
 PostgreSQL es una base excelente para un event store: append-only, transaccional, con índices eficientes.
 
+Un event store bien diseñado en PostgreSQL aprovecha sus garantías ACID para garantizar que los eventos se escriben en orden y sin duplicados.
+La restricción \texttt{UNIQUE (stream\_id, stream\_version)} es el mecanismo central: si dos transacciones concurrentes intentan escribir la versión 5 del mismo stream, solo una tendrá éxito.
+Esta es la implementación de \textbf{Optimistic Concurrency Control}: no se bloquea nada al leer, pero al escribir se verifica que nadie más escribió primero.
+
 \begin{lstlisting}[caption={Schema de Event Store}]
 -- Tabla principal de eventos:
 CREATE TABLE events (
@@ -73,6 +77,13 @@ ORDER BY stream_version ASC;
 
 \section[CQRS: separar lectura de escritura]{\emj{✂️}~CQRS: separar lectura de escritura}
 
+El event store es excelente para escribir (append-only, siempre rápido) pero muy ineficiente para leer estado actual: reconstruir el estado de una orden requiere reproducir 50 eventos cada vez.
+CQRS resuelve esto separando completamente el modelo de escritura del modelo de lectura.
+
+Las \textbf{proyecciones} (o read models) son vistas desnormalizadas, específicamente diseñadas para los patrones de consulta de la UI.
+Un worker de proyección escucha el stream de eventos y actualiza estas vistas inmediatamente después de cada evento.
+El resultado es eventual consistency: por breves milisegundos, la UI puede mostrar datos levemente desactualizados, pero el sistema gana velocidad de escritura ilimitada y lecturas instantáneas.
+
 CQRS (Command Query Responsibility Segregation) separa el modelo de escritura (Commands) del modelo de lectura (Queries/Projections).
 
 \begin{teoriabox}{CQRS con Event Store}
@@ -83,6 +94,10 @@ CQRS (Command Query Responsibility Segregation) separa el modelo de escritura (C
   \item Las proyecciones se pueden reconstruir completamente replaying todos los eventos desde el inicio
 \end{itemize}
 \end{teoriabox}
+
+La tabla de proyección se diseña exclusivamente para las necesidades de la interfaz de usuario, no para reflejar la estructura del dominio.
+Si la UI necesita mostrar nombre del cliente, total de la orden e ícono de estado en una lista, la proyección tiene exactamente esas columnas, ya calculadas, listas para servir en un solo SELECT sin joins.
+El campo \texttt{stream\_version} actúa como checkpoint: el worker de proyección sabe hasta qué evento ha procesado y puede retomar desde ahí si reinicia.
 
 \begin{lstlisting}[caption={Tabla de proyección (read model)}]
 -- Projection optimizada para UI de órdenes:
@@ -151,6 +166,13 @@ COMMIT;
 \end{lstlisting}
 
 \section[Replicación Lógica para CDC]{\emj{🔄}~Replicación Lógica para CDC}
+
+CDC (Change Data Capture) convierte el WAL de PostgreSQL en un stream de eventos de negocio.
+En lugar de que la aplicación publique eventos explícitamente (Outbox), CDC los captura directamente de la BD observando los cambios en las tablas.
+Esto es útil para integrar sistemas legados que no pueden modificarse, sincronizar datos a un data warehouse, o alimentar un pipeline de Kafka sin cambiar el código de la aplicación.
+
+La replicación lógica nativa de PostgreSQL permite que otra base de datos se suscriba a los cambios en tablas específicas.
+Herramientas como Debezium van más lejos: leen el WAL lógico y publican cada INSERT/UPDATE/DELETE como mensajes en Kafka, con la información completa de antes y después del cambio.
 
 Change Data Capture (CDC) captura cambios de la BD como un stream de eventos.
 La replicación lógica de PostgreSQL es una implementación nativa de CDC.

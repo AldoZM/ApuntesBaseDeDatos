@@ -14,6 +14,12 @@ Ideal para arquitecturas multi-tenant donde cada tenant solo debe ver sus datos.
 \end{itemize}
 \end{teoriabox}
 
+Sin RLS, el aislamiento multi-tenant depende completamente de que la aplicación filtre correctamente por \texttt{tenant\_id} en cada query.
+Un bug, un olvidar agregar el filtro, o un path de código poco usado puede exponer datos de un tenant a otro.
+Con RLS, el filtro vive en la base de datos y es imposible saltárselo desde la aplicación: incluso si alguien ejecuta \texttt{SELECT * FROM orders} directamente desde psql con las credenciales de la app, solo verá las filas de su tenant.
+
+La aplicación debe establecer el tenant ID al inicio de cada transacción usando \texttt{SET LOCAL}, que garantiza que la variable se resetea al hacer commit o rollback, sin posibilidad de que un tenant ``quede pegado'' en la sesión.
+
 \begin{lstlisting}[caption={RLS para multi-tenant SaaS}]
 -- Habilitar RLS en la tabla:
 ALTER TABLE orders ENABLE ROW LEVEL SECURITY;
@@ -60,6 +66,17 @@ RESET ROLE;
 \end{lstlisting}
 
 \section[Cifrado con pgcrypto]{\emj{🔑}~Cifrado con pgcrypto}
+
+\texttt{pgcrypto} es la extensión de PostgreSQL para operaciones criptográficas dentro de la base de datos.
+Permite dos categorías de uso:
+
+\begin{itemize}
+  \item \textbf{Hashing de contraseñas:} usando bcrypt (\texttt{crypt} + \texttt{gen\_salt('bf')}). El hash es unidireccional e incluye el salt, por lo que no hay que gestionar el salt por separado. La verificación se hace comparando el hash almacenado con el hash del intento usando la misma función.
+  \item \textbf{Cifrado simétrico de datos sensibles:} usando AES via \texttt{pgp\_sym\_encrypt}. A diferencia del hashing, el cifrado es reversible con la clave. Útil para datos que la aplicación necesita leer en claro (números de tarjeta, datos médicos) pero que no deben ser legibles si alguien accede directamente al archivo de datos o al backup.
+\end{itemize}
+
+La clave de cifrado \textbf{nunca} debe aparecer en el código o en la configuración del repositorio.
+Debe provenir de un gestor de secretos (HashiCorp Vault, AWS Secrets Manager, GCP Secret Manager) inyectada en la aplicación en tiempo de ejecución.
 
 \begin{lstlisting}[caption={Cifrado simétrico y hashing con pgcrypto}]
 CREATE EXTENSION pgcrypto;
@@ -133,6 +150,13 @@ ALTER USER app_user SET ssl = 'on';  -- no existe directamente; usar pg_hba.conf
 
 \section[Principio de Mínimo Privilegio]{\emj{👤}~Principio de Mínimo Privilegio}
 
+El principio de mínimo privilegio (Principle of Least Privilege) establece que cada componente del sistema debe tener solo los permisos estrictamente necesarios para su función.
+En el contexto de PostgreSQL, significa que el usuario con el que se conecta la aplicación no debe poder hacer DROP TABLE, ALTER TABLE, o borrar datos de otras bases.
+Un atacante que compromete las credenciales de la aplicación solo puede hacer lo que la aplicación puede hacer: el daño queda acotado.
+
+La estructura recomendada es usar \textbf{roles} como capas de permisos (no usuarios directamente), y asignar usuarios a roles.
+Esto permite revocar y conceder permisos a múltiples usuarios de una vez, y mantener políticas consistentes.
+
 \begin{lstlisting}[caption={Roles y privilegios granulares}]
 -- Crear roles específicos por función:
 CREATE ROLE app_readonly;
@@ -160,6 +184,10 @@ REVOKE ALL ON DATABASE mydb FROM PUBLIC;
 \end{lstlisting}
 
 \section[pg\_audit: logging de queries]{\emj{📋}~pg\_audit: logging de queries}
+
+Los logs estándar de PostgreSQL registran conexiones y queries lentas, pero no tienen suficiente detalle para auditorías de compliance (PCI-DSS, SOC 2, HIPAA).
+\texttt{pgaudit} es una extensión que añade logging granular de todas las operaciones: qué tablas se leyeron, qué datos se modificaron, qué DDL se ejecutó, y qué usuario lo hizo.
+Los logs de auditoría deben enviarse a un sistema externo (SIEM, S3 con cifrado) donde la BD misma no pueda modificarlos, garantizando su integridad para auditorías.
 
 \begin{lstlisting}[language=, caption={Configurar pg\_audit para compliance}]
 # postgresql.conf:

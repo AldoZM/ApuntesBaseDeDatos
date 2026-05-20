@@ -23,6 +23,11 @@ El patrón para migraciones sin downtime. Divide cada cambio en tres fases deplo
 \end{enumerate}
 \end{teoriabox}
 
+El ejemplo más ilustrativo del patrón es renombrar una columna.
+Un \texttt{ALTER TABLE orders RENAME COLUMN user\_id TO customer\_id} parece inocuo pero es una bomba: al instante, todo el código que referencia \texttt{user\_id} falla con un error de columna inexistente.
+En un sistema con múltiples instancias del servidor de aplicación haciendo rolling deployment, en el momento del ALTER todavía hay instancias corriendo el código viejo.
+La solución es hacer la transición invisible: agregar la columna nueva, mantener ambas sincronizadas durante el tiempo que dure el deploy, y eliminar la vieja solo cuando todo el código usa la nueva.
+
 \begin{lstlisting}[caption={Expand-Contract: renombrar columna (ejemplo real)}]
 -- OBJETIVO: renombrar orders.user_id → orders.customer_id
 -- Esto NO se hace con: ALTER TABLE orders RENAME COLUMN user_id TO customer_id
@@ -65,6 +70,12 @@ DROP INDEX CONCURRENTLY idx_orders_user_id;
 
 \section[CREATE INDEX CONCURRENTLY]{\emj{🔄}~CREATE INDEX CONCURRENTLY}
 
+Crear un índice en una tabla grande bloquea las escrituras mientras se construye.
+En una tabla de 100 millones de filas esto puede tardar varios minutos, lo que es inaceptable en producción.
+\texttt{CREATE INDEX CONCURRENTLY} resuelve esto con un proceso de tres fases:
+primero escanea la tabla sin bloquear nada, luego espera a que las transacciones existentes terminen y escanea de nuevo para capturar cambios, y finalmente activa el índice.
+El costo es que tarda 2--3 veces más y no se puede ejecutar dentro de una transacción.
+
 \begin{lstlisting}[caption={Diferencias entre index normal y CONCURRENTLY}]
 -- Index normal: bloquea escrituras mientras construye
 -- Tarda segundos a minutos dependiendo del tamaño
@@ -89,6 +100,14 @@ DROP INDEX CONCURRENTLY idx_orders_status;
 
 \section[pg\_repack: reorganizar sin bloquear]{\emj{🗃️}~pg\_repack: reorganizar sin bloquear}
 
+Con el tiempo, una tabla con muchos UPDATEs y DELETEs acumula bloat: espacio en disco ocupado por versiones muertas de filas que vacuum no pudo reclamar.
+Una tabla de 10GB de datos reales puede ocupar 40GB en disco si tiene un 75\% de bloat.
+\texttt{VACUUM FULL} compacta la tabla eliminando el bloat, pero requiere un \texttt{AccessExclusiveLock} durante todo el proceso: la tabla queda completamente inaccesible para lecturas y escrituras.
+En tablas grandes, esto puede tomar horas, lo que es inaceptable en producción.
+
+\texttt{pg\_repack} resuelve esto construyendo una copia compacta de la tabla en segundo plano (sin bloqueo prolongado), manteniendo los cambios sincronizados con un trigger, y haciendo el swap atómico al final.
+El downtime real es de apenas milisegundos al momento del swap final.
+
 \texttt{VACUUM FULL} compacta una tabla pero la bloquea completamente.
 \texttt{pg\_repack} hace lo mismo construyendo la tabla nueva en segundo plano y haciendo swap atómico al final.
 
@@ -110,6 +129,13 @@ pg_repack -h localhost -U postgres -d mydb
 \end{lstlisting}
 
 \section[Flyway y Liquibase]{\emj{🗄️}~Flyway y Liquibase}
+
+Sin una herramienta de versionado, el estado del esquema de la BD se vuelve inmanejable en equipos: ¿quién aplicó qué?, ¿el ambiente de staging tiene los mismos cambios que producción?, ¿cómo revierto esta migración?
+Flyway y Liquibase resuelven esto manteniendo una tabla de historial (\texttt{flyway\_schema\_history} o \texttt{databasechangelog}) que registra qué migrations se han aplicado, cuándo, y su checksum para detectar modificaciones posteriores.
+
+\textbf{Flyway} usa archivos SQL con convención de nombres.
+\textbf{Liquibase} usa XML, YAML o JSON con changesets más ricos que permiten rollback automático.
+Ambos se integran con CI/CD para aplicar migrations automáticamente en cada deploy.
 
 Herramientas de versionado de esquema: registran qué migraciones se han aplicado y aplican las pendientes en orden.
 
@@ -164,6 +190,12 @@ liquibase update
 # Rollback al changeset anterior:
 liquibase rollback --tag=v1.0
 \end{lstlisting}
+
+Agregar una restricción NOT NULL a una columna existente es uno de los DDL más peligrosos.
+El problema: PostgreSQL debe escanear toda la tabla para verificar que ninguna fila tiene NULL en esa columna, y mantiene un \texttt{AccessExclusiveLock} durante todo el escaneo.
+En una tabla de 500 millones de filas esto puede tomar 10--30 minutos de bloqueo total.
+
+La solución moderna (PostgreSQL 12+) usa un check constraint con \texttt{NOT VALID} que se agrega instantáneamente (sin escanear), y luego se valida con \texttt{VALIDATE CONSTRAINT} que solo requiere un lock compartido mucho menos restrictivo.
 
 \begin{lstlisting}[caption={Agregar NOT NULL sin downtime}]
 -- Problema: ALTER TABLE t ALTER COLUMN c SET NOT NULL

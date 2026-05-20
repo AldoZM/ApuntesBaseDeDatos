@@ -47,6 +47,10 @@ SELECT pg_stat_statements_reset();
 
 \section[Vistas de sistema esenciales]{\emj{📈}~Vistas de sistema esenciales}
 
+PostgreSQL expone su estado interno a través de vistas del catálogo con el prefijo \texttt{pg\_stat\_*}.
+Estas vistas son la fuente de verdad para diagnóstico en tiempo real: qué queries están corriendo, cuáles están bloqueadas, qué tablas tienen dead tuples acumulados, y qué tan eficiente está siendo el cache.
+No requieren instalar nada: están disponibles en cualquier instancia de PostgreSQL.
+
 \begin{lstlisting}[caption={Queries críticas de monitoreo}]
 -- Conexiones activas y sus queries:
 SELECT pid, usename, application_name, client_addr, state,
@@ -94,6 +98,12 @@ FROM pg_statio_user_tables;
 
 \section[pgBadger: análisis de logs]{\emj{📋}~pgBadger: análisis de logs}
 
+\texttt{pg\_stat\_statements} captura estadísticas en tiempo real de queries en ejecución.
+pgBadger, en cambio, analiza \textbf{retrospectivamente} los archivos de log generados por PostgreSQL y produce reportes HTML con gráficas detalladas: distribución de tiempos de queries, las 10 queries más lentas, errores más frecuentes, picos de conexiones por hora, y más.
+
+Es especialmente útil para análisis post-incidente (``¿qué pasó entre las 2am y las 3am?'') y para auditorías de rendimiento periódicas.
+Los dos tools son complementarios: \texttt{pg\_stat\_statements} para diagnóstico en vivo, pgBadger para análisis histórico.
+
 pgBadger analiza los logs de PostgreSQL y genera reportes HTML con las queries más lentas, los errores más frecuentes y métricas de conexiones.
 
 \begin{lstlisting}[language=, caption={Configurar logs para pgBadger}]
@@ -123,6 +133,12 @@ pgbadger /var/log/postgresql/postgresql.log \
 
 \section[Prometheus + postgres\_exporter]{\emj{📡}~Prometheus + postgres\_exporter}
 
+Para monitoreo continuo en producción se necesita un sistema de métricas que almacene series de tiempo y permita alertas automáticas.
+\texttt{postgres\_exporter} es el exportador oficial de la comunidad: se conecta a PostgreSQL y expone todas las métricas de las vistas \texttt{pg\_stat\_*} en formato Prometheus.
+Prometheus las recolecta cada 15--30 segundos y las almacena; Grafana las visualiza en dashboards; Alertmanager envía notificaciones (PagerDuty, Slack) cuando se cruzan umbrales.
+
+Esta combinación (Prometheus + postgres\_exporter + Grafana) es el stack de monitoreo estándar para PostgreSQL en Kubernetes y bare metal.
+
 \begin{lstlisting}[language=, caption={postgres\_exporter — métricas para Prometheus}]
 # docker-compose.yml:
 # services:
@@ -143,6 +159,11 @@ pgbadger /var/log/postgresql/postgresql.log \
 # pg_replication_lag_seconds       — lag de replicación
 # pg_locks_count                   — locks por tipo
 \end{lstlisting}
+
+Las alertas de Prometheus se definen como reglas en archivos YAML.
+Cada regla evalúa una expresión PromQL periódicamente; si se cumple por el tiempo definido en \texttt{for}, se dispara la alerta.
+El campo \texttt{for} es importante: evita alertas por picos momentáneos.
+Una replication lag de 5 segundos por 30 segundos es probablemente transitoria; por 5 minutos es un problema real.
 
 \begin{lstlisting}[language=, caption={Alertas críticas en Prometheus (alertmanager rules)}]
 # prometheus/rules/postgres.yml:

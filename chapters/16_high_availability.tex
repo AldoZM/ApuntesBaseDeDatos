@@ -15,6 +15,10 @@ El primary envía registros WAL al standby en tiempo real (streaming), que los a
 \end{itemize}
 \end{teoriabox}
 
+La configuración de streaming replication requiere cambios en el primary y luego crear el standby desde un base backup.
+El primary necesita permitir conexiones de replicación (en \texttt{pg\_hba.conf}) y tener el nivel de WAL correcto.
+El standby se inicializa con \texttt{pg\_basebackup}, que copia el data directory completo y establece la conexión inicial.
+
 \begin{lstlisting}[caption={Configurar streaming replication (Primary)}]
 -- postgresql.conf en PRIMARY:
 wal_level = replica            -- mínimo para replicación
@@ -45,6 +49,11 @@ primary_conninfo = 'host=primary_host port=5432 user=replicator password=securep
 touch /var/lib/postgresql/data/standby.signal
 \end{lstlisting}
 
+El monitoreo continuo del lag es crítico en un clúster con replicación asíncrona.
+Un standby con 10 minutos de lag no puede servir como failover sin pérdida de datos.
+PostgreSQL expone el lag en bytes (diferencia de LSN) y en tiempo (cuánto tardaría en alcanzar al primary).
+El lag en tiempo es más intuitivo para definir SLAs de RPO, pero el lag en bytes es más preciso para detectar el problema.
+
 \begin{lstlisting}[caption={Monitorear replication lag}]
 -- En el PRIMARY:
 SELECT client_addr, state, sent_lsn, write_lsn, flush_lsn, replay_lsn,
@@ -70,6 +79,11 @@ SELECT pg_last_wal_replay_lsn();     -- último WAL aplicado
   \item \textbf{synchronous\_commit = remote\_apply:} espera a que el standby \emph{aplique} el WAL. Garantía más fuerte pero latencia máxima.
 \end{itemize}
 \end{teoriabox}
+
+La replicación síncrona garantiza que cuando el primary confirma un commit al cliente, ese commit ya está en al menos un standby.
+El primary bloquea el commit hasta recibir la confirmación del standby designado.
+Esto elimina el riesgo de pérdida de datos en failover (RPO = 0), pero añade latencia proporcional al round-trip time entre primary y standby: en un datacenter local, 1--2ms; entre regiones, 50--200ms.
+La decisión de usar replicación síncrona es un tradeoff explícito entre durabilidad y rendimiento.
 
 \begin{lstlisting}[caption={Configurar replicación síncrona}]
 -- postgresql.conf en PRIMARY:
@@ -99,6 +113,10 @@ Patroni es un template de HA para PostgreSQL que usa un DCS (Distributed Configu
   \item \textbf{patronictl:} CLI para gestionar el clúster (switchover manual, failover, restart, reinitialización).
 \end{itemize}
 \end{teoriabox}
+
+El archivo de configuración de Patroni define la identidad del nodo, cómo conectarse al DCS, y los parámetros de PostgreSQL.
+Cada nodo del clúster tiene su propio archivo con un \texttt{name} único pero el mismo \texttt{scope} (nombre del clúster).
+El \texttt{maximum\_lag\_on\_failover} es especialmente importante: si un standby tiene más lag que este valor en bytes, Patroni no lo promoverá a primary automáticamente, evitando que un standby muy desactualizado se convierta en el nuevo líder.
 
 \begin{lstlisting}[language=, caption={patroni.yml — configuración básica}]
 scope: postgres-cluster
@@ -136,6 +154,10 @@ postgresql:
       password: adminpass
 \end{lstlisting}
 
+\texttt{patronictl} es la CLI para gestionar el clúster Patroni desde cualquier nodo con acceso al DCS.
+Un \textbf{switchover} es un failover planificado: transfiere el liderazgo de forma ordenada, replicando todos los cambios pendientes primero y asegurando mínimo downtime (típicamente $<$1 segundo).
+Un \textbf{failover} forzado se usa en emergencias cuando el primary no responde: puede implicar algo de pérdida de datos si había replicación asíncrona con lag.
+
 \begin{lstlisting}[language=, caption={patronictl — operaciones comunes}]
 # Ver estado del clúster:
 patronictl -c /etc/patroni.yml list
@@ -161,6 +183,10 @@ patronictl -c /etc/patroni.yml reinit postgres-cluster node2
 Patroni lo evita con el DCS: el primary tiene un ``lease'' (lock) en etcd. Si pierde conectividad con etcd, \textbf{se degrada a standby} aunque aún pueda hablar con clientes.
 El nodo que no puede adquirir el lock no puede ser primary, sin importar su estado de red con los otros nodos de PG.
 \end{warningbox}
+
+Patroni expone endpoints HTTP en el puerto 8008 que HAProxy utiliza para health checks.
+Esto es fundamental: el balanceador de carga no necesita lógica especial para detectar quién es el primary; simplemente hace un GET cada pocos segundos y enruta el tráfico al nodo que responde 200 OK en \texttt{/primary}.
+Cuando ocurre un failover y un standby es promovido, en segundos el health check cambia y HAProxy redirige el tráfico automáticamente.
 
 \begin{lstlisting}[caption={Health endpoint de Patroni para HAProxy}]
 -- Patroni expone en :8008:

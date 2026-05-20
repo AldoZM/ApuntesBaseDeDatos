@@ -19,6 +19,10 @@ El sharding horizontal se justifica cuando una sola máquina no puede manejar el
 
 El partitioning es el primer paso antes de sharding real. Divide una tabla lógica en múltiples tablas físicas (particiones) en el \emph{mismo} nodo.
 
+El partitioning declarativo de PostgreSQL (disponible desde PG 10, mejorado significativamente en PG 11--14) divide una tabla lógica en múltiples tablas físicas llamadas particiones.
+Para el código de la aplicación, la tabla padre se ve como una tabla normal: los INSERTs, UPDATEs, SELECTs se escriben contra la tabla padre y PG los enruta a la partición correcta automáticamente.
+El beneficio principal es \textbf{partition pruning}: el planner elimina de la ejecución las particiones que no contienen datos relevantes para la query, reduciendo dramáticamente el I/O en tablas con datos temporales o por categoría.
+
 \begin{lstlisting}[caption={Table Partitioning por rango (tiempo)}]
 -- Tabla madre particionada:
 CREATE TABLE events (
@@ -48,6 +52,10 @@ INSERT INTO events (user_id, event_type, created_at)
 VALUES (42, 'click', '2025-01-15');
 -- Automáticamente va a events_2025_01
 \end{lstlisting}
+
+El partition pruning solo funciona si la condición WHERE usa la \emph{misma expresión} que define la partición.
+Si la columna de partición es \texttt{created\_at} y filtras por \texttt{DATE(created\_at)}, el planner no puede determinar qué particiones eliminar y escanea todas.
+Siempre verificar con EXPLAIN que solo aparecen las particiones esperadas.
 
 \begin{lstlisting}[caption={Partition pruning — verificar que funciona}]
 -- Con EXPLAIN, verificar que el planner elide particiones irrelevantes:
@@ -82,6 +90,10 @@ Un nodo coordinador recibe queries; las distribuye a workers que contienen fragm
 \end{itemize}
 \end{teoriabox}
 
+Citus convierte PostgreSQL en una base de datos distribuida añadiendo un nodo \textbf{coordinador} que recibe todas las queries y las divide entre los \textbf{workers}.
+La clave de diseño más importante es elegir la \textbf{distribution column}: la columna por la cual se fragmentan los datos entre workers.
+Para un SaaS multi-tenant, \texttt{tenant\_id} es la elección natural: garantiza que todos los datos de un tenant estén en el mismo worker (colocation), haciendo que las queries por tenant sean locales y no requieran comunicación de red entre workers.
+
 \begin{lstlisting}[caption={Setup básico de Citus}]
 -- Instalar extensión:
 CREATE EXTENSION citus;
@@ -105,6 +117,11 @@ SELECT tenant_id, COUNT(*) FROM orders GROUP BY tenant_id;
 \end{lstlisting}
 
 \section[Foreign Data Wrappers (FDW)]{\emj{🔗}~Foreign Data Wrappers (FDW)}
+
+FDW (Foreign Data Wrappers) es el mecanismo de PostgreSQL para acceder a fuentes de datos externas como si fueran tablas locales.
+PostgreSQL incluye \texttt{postgres\_fdw} para conectar con otras instancias de PG, y existen wrappers de terceros para MySQL, MongoDB, S3, archivos CSV, Redis, y más.
+El uso más común en arquitecturas modernas es la \textbf{federación}: consultar datos de múltiples bases en una sola query SQL, o implementar migraciones incrementales donde la base nueva consulta datos de la vieja durante el período de transición.
+El planner intenta hacer ``push-down'' de filtros y proyecciones al servidor remoto para minimizar los datos transferidos por red.
 
 FDW permite acceder a fuentes externas (otra base PG, MySQL, S3, CSV) como si fueran tablas locales.
 Útil para federación de datos y migraciones incrementales.

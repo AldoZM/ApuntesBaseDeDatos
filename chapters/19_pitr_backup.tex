@@ -16,6 +16,12 @@ Esto garantiza que tras un crash, el WAL puede re-aplicarse para recuperar el es
 \end{itemize}
 \end{teoriabox}
 
+El comportamiento del WAL se controla desde \texttt{postgresql.conf}.
+Los parámetros más críticos afectan cuánto WAL se retiene, con qué frecuencia se hacen checkpoints, y si se comprime.
+Un checkpoint frecuente (cada minuto) reduce el tiempo de recovery ante un crash pero aumenta la escritura en disco.
+Un checkpoint poco frecuente (cada 30 minutos) reduce el I/O pero alarga el tiempo de recovery y puede generar picos de I/O cuando se dispara.
+El valor por defecto de 5 minutos es un balance razonable para la mayoría de sistemas.
+
 \begin{lstlisting}[caption={Parámetros WAL críticos}]
 -- postgresql.conf:
 wal_level = replica          -- mínimo para replicación y archivado
@@ -38,6 +44,10 @@ SELECT * FROM pg_stat_bgwriter;
 \end{lstlisting}
 
 \section[WAL Archiving]{\emj{📦}~WAL Archiving}
+
+Un base backup por sí solo solo permite restaurar al momento exacto en que se tomó.
+Para recuperarse a cualquier punto intermedio (``restore to 14:23 yesterday''), necesitas además los segmentos WAL generados desde el backup hasta ese momento.
+El archivado de WAL automatiza esto: cada vez que PostgreSQL completa un segmento de 16MB, ejecuta el \texttt{archive\_command} para copiarlo al destino externo (S3, NFS, etc.).
 
 El archivado de WAL copia cada segmento completado a un almacenamiento externo (S3, NFS, etc.).
 Combinado con un base backup, permite PITR a cualquier punto en el tiempo.
@@ -64,6 +74,9 @@ FROM pg_stat_archiver;
 \end{lstlisting}
 
 \section[pgBackRest: backup empresarial]{\emj{🛡️}~pgBackRest: backup empresarial}
+
+pgBackRest resuelve en un solo tool los problemas que de otra forma requieren scripts caseros frágiles: coordinación de base backup + archivado WAL, compresión eficiente, cifrado at-rest, backups diferenciales e incrementales para reducir tiempo y almacenamiento, y verificación de integridad del repositorio.
+Es la herramienta estándar de facto en producción para PostgreSQL, superando a la alternativa más antigua \texttt{barman}.
 
 pgBackRest es la herramienta de backup más completa para PostgreSQL: maneja base backups, WAL archiving, compresión, cifrado y PITR.
 
@@ -117,6 +130,13 @@ pgbackrest --stanza=mydb check
 \end{lstlisting}
 
 \section[Procedimiento PITR]{\emj{🕰️}~Procedimiento PITR}
+
+PITR (Point-In-Time Recovery) es la capacidad de restaurar PostgreSQL al estado exacto que tenía en un momento específico del pasado.
+Es la defensa principal contra errores humanos: un \texttt{DELETE} sin WHERE, un \texttt{DROP TABLE} accidental, o datos corruptos por un bug de la aplicación.
+
+El proceso combina un base backup (que establece el estado en un punto conocido) con la aplicación secuencial de segmentos WAL (que reproducen cada cambio posterior) hasta el instante deseado.
+PostgreSQL aplica el WAL en modo recovery y cuando alcanza el \texttt{recovery\_target\_time}, se detiene y promueve la instancia como primary.
+Toda la data entre el momento del backup y el recovery target queda disponible; la data escrita \emph{después} del target se descarta.
 
 Point-In-Time Recovery: restaurar la base a cualquier momento entre el último base backup y el WAL archivado más reciente.
 
