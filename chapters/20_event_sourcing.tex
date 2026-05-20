@@ -1,0 +1,189 @@
+\chapter[Event Sourcing y CQRS]{\emj{📨}~Event Sourcing y CQRS}
+
+\section[Event Sourcing: estado como historia]{\emj{📜}~Event Sourcing: estado como historia}
+
+En un modelo tradicional, se guarda el \textbf{estado actual}.
+En Event Sourcing, se guarda la \textbf{historia de eventos}; el estado actual se deriva de ellos.
+
+\begin{teoriabox}{Comparativa: estado vs eventos}
+\begin{itemize}
+  \item \textbf{CRUD tradicional:} \texttt{UPDATE orders SET status='shipped'} — el estado anterior se pierde
+  \item \textbf{Event Sourcing:} se inserta un evento \texttt{\{type: OrderShipped, orderId: 42, at: ...\}} — el estado anterior está implícito en la historia
+  \item \textbf{Ventajas:} audit log gratuito, time travel (reconstruir estado en cualquier momento), debugging trivial, event replay para nuevas proyecciones
+  \item \textbf{Desventajas:} complejidad mayor, eventual consistency en las vistas (read models), el estado actual requiere replay de todos los eventos (mitigado con snapshots)
+\end{itemize}
+\end{teoriabox}
+
+\section[Event Store con PostgreSQL]{\emj{🗄️}~Event Store con PostgreSQL}
+
+PostgreSQL es una base excelente para un event store: append-only, transaccional, con índices eficientes.
+
+\begin{lstlisting}[caption={Schema de Event Store}]
+-- Tabla principal de eventos:
+CREATE TABLE events (
+  event_id        UUID        NOT NULL DEFAULT gen_random_uuid(),
+  stream_id       TEXT        NOT NULL,   -- ej: 'order-42', 'user-100'
+  stream_version  BIGINT      NOT NULL,   -- versión del stream (para OCC)
+  event_type      TEXT        NOT NULL,   -- 'OrderCreated', 'OrderShipped', etc.
+  payload         JSONB       NOT NULL,
+  metadata        JSONB       NOT NULL DEFAULT '{}',
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+  PRIMARY KEY (event_id),
+  UNIQUE (stream_id, stream_version)  -- evita conflictos de concurrencia
+);
+
+CREATE INDEX idx_events_stream ON events (stream_id, stream_version);
+CREATE INDEX idx_events_type ON events (event_type);
+CREATE INDEX idx_events_created_at ON events (created_at);
+
+-- Tabla de snapshots (para reconstrucción rápida):
+CREATE TABLE snapshots (
+  stream_id       TEXT        NOT NULL,
+  stream_version  BIGINT      NOT NULL,
+  state           JSONB       NOT NULL,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (stream_id, stream_version)
+);
+\end{lstlisting}
+
+\begin{lstlisting}[caption={Append de eventos con Optimistic Concurrency Control}]
+-- Agregar evento verificando versión esperada (OCC):
+-- Si alguien más modificó el stream, la inserción falla por UNIQUE constraint
+INSERT INTO events (stream_id, stream_version, event_type, payload)
+VALUES (
+  'order-42',
+  5,   -- esperamos que la versión actual sea 4, insertamos la 5
+  'OrderShipped',
+  '{"carrier": "DHL", "tracking_code": "1Z999AA1"}'::jsonb
+);
+-- Si ya existe (stream_id, stream_version=5): ERROR duplicate key
+-- La app debe hacer retry o reportar conflict
+
+-- Obtener versión actual de un stream:
+SELECT MAX(stream_version) FROM events WHERE stream_id = 'order-42';
+
+-- Reconstruir estado de un aggregate (replay):
+SELECT event_type, payload, created_at
+FROM events
+WHERE stream_id = 'order-42'
+ORDER BY stream_version ASC;
+-- La app aplica cada evento al estado inicial vacío para obtener el estado actual
+\end{lstlisting}
+
+\section[CQRS: separar lectura de escritura]{\emj{✂️}~CQRS: separar lectura de escritura}
+
+CQRS (Command Query Responsibility Segregation) separa el modelo de escritura (Commands) del modelo de lectura (Queries/Projections).
+
+\begin{teoriabox}{CQRS con Event Store}
+\begin{itemize}
+  \item \textbf{Write side:} recibe Commands (\texttt{ShipOrder}, \texttt{CancelOrder}), valida, aplica lógica de negocio, emite Events al event store
+  \item \textbf{Read side (Projections):} procesa events del store y actualiza vistas desnormalizadas optimizadas para lectura
+  \item \textbf{Eventual consistency:} hay un delay entre que un evento se escribe y que la proyección lo refleja (generalmente milisegundos)
+  \item Las proyecciones se pueden reconstruir completamente replaying todos los eventos desde el inicio
+\end{itemize}
+\end{teoriabox}
+
+\begin{lstlisting}[caption={Tabla de proyección (read model)}]
+-- Projection optimizada para UI de órdenes:
+CREATE TABLE order_summary (
+  order_id        BIGINT      PRIMARY KEY,
+  customer_name   TEXT        NOT NULL,
+  status          TEXT        NOT NULL,
+  total_amount    NUMERIC     NOT NULL,
+  item_count      INT         NOT NULL DEFAULT 0,
+  last_event_at   TIMESTAMPTZ,
+  stream_version  BIGINT      NOT NULL  -- checkpoint del último evento procesado
+);
+
+-- Actualizar projection al procesar un evento:
+-- (esto corre en el projection worker, no en el request path)
+INSERT INTO order_summary (order_id, customer_name, status, total_amount, stream_version)
+VALUES (42, 'Ana García', 'created', 0, 1)
+ON CONFLICT (order_id) DO UPDATE
+  SET status = EXCLUDED.status,
+      stream_version = EXCLUDED.stream_version,
+      last_event_at = NOW();
+\end{lstlisting}
+
+\section[Outbox Pattern]{\emj{📤}~Outbox Pattern}
+
+Problema: guardar un evento en la BD Y publicarlo en Kafka en la misma operación. Si el mensaje a Kafka falla después de que la BD committeó, hay inconsistencia.
+
+\begin{teoriabox}{Solución: Outbox}
+\begin{enumerate}
+  \item La transacción de negocio escribe el evento en la BD \textbf{y} en una tabla \texttt{outbox} — todo en la misma transacción ACID.
+  \item Un proceso separado (poller o CDC) lee la tabla outbox y publica los mensajes a Kafka.
+  \item Marca los mensajes como procesados (o los elimina).
+  \item Si el publisher falla, los mensajes siguen en el outbox y se reintentarán. \textbf{At-least-once delivery}.
+\end{enumerate}
+\end{teoriabox}
+
+\begin{lstlisting}[caption={Outbox table y proceso}]
+-- Tabla outbox:
+CREATE TABLE outbox (
+  id          UUID        NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+  topic       TEXT        NOT NULL,      -- 'orders.events', 'payments.events'
+  key         TEXT,                      -- para particionamiento en Kafka
+  payload     JSONB       NOT NULL,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  sent_at     TIMESTAMPTZ              -- NULL = pendiente
+);
+
+-- En la transacción de negocio:
+BEGIN;
+  UPDATE orders SET status = 'shipped' WHERE id = 42;
+  INSERT INTO outbox (topic, key, payload)
+  VALUES ('orders.events', '42', '{"type":"OrderShipped","order_id":42}'::jsonb);
+COMMIT;
+-- Si el COMMIT falla → ambos rollbackean
+-- Si el COMMIT exitoso → el outbox poller publicará el mensaje
+
+-- El poller (puede ser pg_cron o un worker externo):
+BEGIN;
+  SELECT id, topic, key, payload
+  FROM outbox WHERE sent_at IS NULL
+  ORDER BY created_at LIMIT 100
+  FOR UPDATE SKIP LOCKED;
+  -- Publicar a Kafka aquí...
+  UPDATE outbox SET sent_at = NOW() WHERE id IN (...);
+COMMIT;
+\end{lstlisting}
+
+\section[Replicación Lógica para CDC]{\emj{🔄}~Replicación Lógica para CDC}
+
+Change Data Capture (CDC) captura cambios de la BD como un stream de eventos.
+La replicación lógica de PostgreSQL es una implementación nativa de CDC.
+
+\begin{lstlisting}[caption={Replicación lógica como CDC}]
+-- Requiere wal_level = logical en postgresql.conf
+
+-- Crear publication (qué cambios capturar):
+CREATE PUBLICATION orders_pub FOR TABLE orders, items;
+-- O capturar todo:
+CREATE PUBLICATION all_tables FOR ALL TABLES;
+
+-- Crear subscription en otra base (que recibirá los cambios):
+CREATE SUBSCRIPTION orders_sub
+  CONNECTION 'host=source_db port=5432 dbname=prod user=replicator password=secret'
+  PUBLICATION orders_pub;
+
+-- Ver estado de la replicación lógica:
+SELECT * FROM pg_stat_subscription;
+SELECT * FROM pg_replication_slots;
+
+-- Herramientas de CDC más maduras:
+-- Debezium: captura WAL lógico → Kafka. Soporta PG, MySQL, MongoDB
+-- pglogical: extensión para replicación lógica bidireccional entre PG
+\end{lstlisting}
+
+\begin{entrevistabox}
+\begin{enumerate}
+  \item ¿Cuál es la diferencia fundamental entre CRUD tradicional y Event Sourcing?
+  \item ¿Qué es un aggregate en el contexto de Event Sourcing?
+  \item Explica el problema que resuelve el Outbox Pattern. ¿Qué garantía de delivery ofrece?
+  \item ¿Qué es eventual consistency en CQRS? ¿Cómo lo manejas en la UI?
+  \item ¿Cuándo elegiría Event Sourcing sobre un modelo relacional clásico?
+  \item ¿Qué es CDC (Change Data Capture) y cómo lo implementarías en PostgreSQL?
+\end{enumerate}
+\end{entrevistabox}

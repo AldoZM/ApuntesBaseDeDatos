@@ -1,0 +1,188 @@
+\chapter[High Availability y Replicación]{\emj{🔄}~High Availability y Replicación}
+
+\section[Streaming Replication]{\emj{📡}~Streaming Replication}
+
+PostgreSQL usa \textbf{WAL (Write-Ahead Log)} como fuente de verdad para replicación.
+El primary envía registros WAL al standby en tiempo real (streaming), que los aplica para mantener una copia casi idéntica.
+
+\begin{teoriabox}{Arquitectura de Streaming Replication}
+\begin{itemize}
+  \item \textbf{Primary:} acepta lecturas y escrituras. Genera WAL en \texttt{pg\_wal/}.
+  \item \textbf{WAL Sender:} proceso en primary que envía WAL al standby por TCP.
+  \item \textbf{WAL Receiver:} proceso en standby que recibe WAL y lo escribe localmente.
+  \item \textbf{Startup Process:} en standby, aplica WAL continuamente (recovery loop).
+  \item \textbf{Replication lag:} delay entre cambio en primary y aplicación en standby. Medido en bytes (write lag) y tiempo (replay lag).
+\end{itemize}
+\end{teoriabox}
+
+\begin{lstlisting}[caption={Configurar streaming replication (Primary)}]
+-- postgresql.conf en PRIMARY:
+wal_level = replica            -- mínimo para replicación
+max_wal_senders = 5            -- procesos WAL sender simultáneos
+wal_keep_size = 1GB            -- retener WAL para standbys lentos
+hot_standby = on               -- standbys pueden servir lecturas (default on)
+
+-- pg_hba.conf en PRIMARY (agregar):
+-- host replication replicator 10.0.0.2/32 scram-sha-256
+
+-- Crear usuario de replicación:
+CREATE USER replicator WITH REPLICATION ENCRYPTED PASSWORD 'securepass';
+\end{lstlisting}
+
+\begin{lstlisting}[caption={Configurar streaming replication (Standby)}]
+-- Crear standby con pg_basebackup:
+pg_basebackup -h primary_host -U replicator -D /var/lib/postgresql/data \
+  --wal-method=stream --checkpoint=fast --progress
+
+-- postgresql.conf en STANDBY:
+hot_standby = on
+hot_standby_feedback = on      -- evita que autovacuum en primary cancele queries en standby
+
+-- postgresql.conf o recovery.conf (PG 12+: primary_conninfo en postgresql.conf):
+primary_conninfo = 'host=primary_host port=5432 user=replicator password=securepass'
+
+-- Crear archivo de señal para modo standby (PG 12+):
+touch /var/lib/postgresql/data/standby.signal
+\end{lstlisting}
+
+\begin{lstlisting}[caption={Monitorear replication lag}]
+-- En el PRIMARY:
+SELECT client_addr, state, sent_lsn, write_lsn, flush_lsn, replay_lsn,
+       write_lag, flush_lag, replay_lag,
+       sync_state
+FROM pg_stat_replication;
+
+-- replay_lag > 0: standby está por detrás
+-- sync_state: 'async' (default), 'sync', 'quorum'
+
+-- En el STANDBY:
+SELECT now() - pg_last_xact_replay_timestamp() AS replication_delay;
+SELECT pg_is_in_recovery();          -- true si es standby
+SELECT pg_last_wal_replay_lsn();     -- último WAL aplicado
+\end{lstlisting}
+
+\section[Replicación Síncrona vs Asíncrona]{\emj{⚖️}~Replicación Síncrona vs Asíncrona}
+
+\begin{teoriabox}{Modos de commit}
+\begin{itemize}
+  \item \textbf{Asíncrona (default):} primary confirma commit sin esperar al standby. RPO $>$ 0 (puede haber pérdida de datos). Latencia mínima.
+  \item \textbf{Síncrona:} primary espera que el standby confirme haber recibido (y opcionalmente aplicado) el WAL antes de retornar el commit. RPO = 0 (sin pérdida). Latencia mayor.
+  \item \textbf{synchronous\_commit = remote\_apply:} espera a que el standby \emph{aplique} el WAL. Garantía más fuerte pero latencia máxima.
+\end{itemize}
+\end{teoriabox}
+
+\begin{lstlisting}[caption={Configurar replicación síncrona}]
+-- postgresql.conf en PRIMARY:
+synchronous_standby_names = 'FIRST 1 (standby1, standby2)'
+-- FIRST 1: el primero de la lista que esté disponible se vuelve síncrono
+-- ANY 1: cualquiera de la lista
+
+synchronous_commit = on         -- default; espera flush en standby
+-- synchronous_commit = remote_apply  -- más fuerte: espera aplicación
+
+-- Por transacción (tradeoff rendimiento/durabilidad):
+BEGIN;
+SET LOCAL synchronous_commit = off;  -- esta tx es asíncrona
+INSERT INTO audit_log ...;
+COMMIT;
+\end{lstlisting}
+
+\section[Patroni: HA Automatizado]{\emj{🎯}~Patroni: HA Automatizado}
+
+Patroni es un template de HA para PostgreSQL que usa un DCS (Distributed Configuration Store: etcd, Consul, ZooKeeper) para coordinar elecciones de líder y failover automático.
+
+\begin{teoriabox}{Componentes de Patroni}
+\begin{itemize}
+  \item \textbf{Patroni agent:} corre en cada nodo de PG. Monitorea el nodo, actualiza el DCS, maneja failover.
+  \item \textbf{DCS (etcd):} almacena quién es el líder y el estado del clúster. El ``árbitro'' que evita split-brain.
+  \item \textbf{HAProxy/pgBouncer:} balanceador de carga. Dirige escrituras al primary, lecturas a standbys. Patroni expone health endpoints HTTP para que HAProxy detecte el primary.
+  \item \textbf{patronictl:} CLI para gestionar el clúster (switchover manual, failover, restart, reinitialización).
+\end{itemize}
+\end{teoriabox}
+
+\begin{lstlisting}[language=, caption={patroni.yml — configuración básica}]
+scope: postgres-cluster
+namespace: /db/
+name: node1
+
+restapi:
+  listen: 0.0.0.0:8008
+  connect_address: 10.0.0.1:8008
+
+etcd:
+  hosts: 10.0.0.10:2379,10.0.0.11:2379,10.0.0.12:2379
+
+bootstrap:
+  dcs:
+    ttl: 30
+    loop_wait: 10
+    retry_timeout: 30
+    maximum_lag_on_failover: 1048576  # 1MB lag máximo para ser elegible
+
+  initdb:
+    - encoding: UTF8
+    - data-checksums
+
+postgresql:
+  listen: 0.0.0.0:5432
+  connect_address: 10.0.0.1:5432
+  data_dir: /var/lib/postgresql/data
+  authentication:
+    replication:
+      username: replicator
+      password: securepass
+    superuser:
+      username: postgres
+      password: adminpass
+\end{lstlisting}
+
+\begin{lstlisting}[language=, caption={patronictl — operaciones comunes}]
+# Ver estado del clúster:
+patronictl -c /etc/patroni.yml list
+
+# Switchover manual (planned, sin downtime notable):
+patronictl -c /etc/patroni.yml switchover --master node1 --candidate node2
+
+# Failover forzado (emergencia):
+patronictl -c /etc/patroni.yml failover --master node1 --force
+
+# Reiniciar nodo:
+patronictl -c /etc/patroni.yml restart postgres-cluster node1
+
+# Reinicializar standby (después de desync):
+patronictl -c /etc/patroni.yml reinit postgres-cluster node2
+\end{lstlisting}
+
+\section[Failover y Split-Brain]{\emj{⚠️}~Failover y Split-Brain}
+
+\begin{warningbox}
+\textbf{Split-brain:} dos nodos creen ser el primary simultáneamente. Ambos aceptan escrituras, los datos divergen, y no hay forma automática de reconciliar. Es el peor escenario en HA.
+
+Patroni lo evita con el DCS: el primary tiene un ``lease'' (lock) en etcd. Si pierde conectividad con etcd, \textbf{se degrada a standby} aunque aún pueda hablar con clientes.
+El nodo que no puede adquirir el lock no puede ser primary, sin importar su estado de red con los otros nodos de PG.
+\end{warningbox}
+
+\begin{lstlisting}[caption={Health endpoint de Patroni para HAProxy}]
+-- Patroni expone en :8008:
+-- GET /primary   → 200 si es primary, 503 si no
+-- GET /replica   → 200 si es standby, 503 si no
+-- GET /health    → 200 siempre (para liveness check)
+
+-- haproxy.cfg:
+-- backend postgres_primary
+--   option httpchk GET /primary
+--   server node1 10.0.0.1:5432 check port 8008
+--   server node2 10.0.0.2:5432 check port 8008
+--   server node3 10.0.0.3:5432 check port 8008
+\end{lstlisting}
+
+\begin{entrevistabox}
+\begin{enumerate}
+  \item ¿Cuál es la diferencia entre RPO y RTO? ¿Cómo los afecta la replicación síncrona vs asíncrona?
+  \item Explica cómo Patroni evita split-brain.
+  \item ¿Qué es hot\_standby\_feedback y por qué importa en un clúster con queries largas en el standby?
+  \item ¿Cuándo usarías synchronous\_commit = remote\_apply en lugar de \texttt{on}?
+  \item Un standby tiene 5 minutos de lag. ¿Cuáles son las causas más probables y cómo diagnosticas?
+  \item ¿Qué ocurre si etcd no tiene quórum? ¿El clúster sigue funcionando?
+\end{enumerate}
+\end{entrevistabox}

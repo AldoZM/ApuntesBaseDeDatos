@@ -1,0 +1,196 @@
+\chapter[Migraciones en Producción]{\emj{🔧}~Migraciones en Producción}
+
+\section[El problema de las migraciones en producción]{\emj{⚠️}~El problema de las migraciones en producción}
+
+Alterar una tabla con millones de filas en producción sin downtime es uno de los desafíos más subestimados del DBA Senior.
+Un \texttt{ALTER TABLE ADD COLUMN NOT NULL} en una tabla de 100M filas puede bloquear todas las escrituras por minutos.
+
+\begin{warningbox}
+\textbf{Locks en DDL:} \texttt{ALTER TABLE} toma un \texttt{AccessExclusiveLock} que bloquea \emph{todas} las lecturas y escrituras mientras dura.
+Si hay una transacción larga corriendo, el ALTER espera. Y mientras espera, \emph{las queries nuevas también esperan} (cola de locks).
+Un ALTER de 5 segundos puede provocar 500 queries encoladas que provocan timeout cascada y aparente caída total del servicio.
+\end{warningbox}
+
+\section[Expand-Contract Pattern]{\emj{📋}~Expand-Contract Pattern}
+
+El patrón para migraciones sin downtime. Divide cada cambio en tres fases deployables independientemente.
+
+\begin{teoriabox}{Las 3 fases del Expand-Contract}
+\begin{enumerate}
+  \item \textbf{Expand (Add):} agregar la nueva estructura (columna, tabla, índice) sin eliminar la vieja. El código nuevo puede leer ambas; el código viejo sigue funcionando solo con la vieja.
+  \item \textbf{Migrate (Backfill):} llenar la nueva estructura con datos existentes. Opcionalmente: actualizar el código para escribir en ambas.
+  \item \textbf{Contract (Remove):} eliminar la estructura vieja una vez que todo el código usa la nueva.
+\end{enumerate}
+\end{teoriabox}
+
+\begin{lstlisting}[caption={Expand-Contract: renombrar columna (ejemplo real)}]
+-- OBJETIVO: renombrar orders.user_id → orders.customer_id
+-- Esto NO se hace con: ALTER TABLE orders RENAME COLUMN user_id TO customer_id
+-- (rompería todo el código viejo instantáneamente)
+
+-- FASE 1 - EXPAND: agregar nueva columna
+ALTER TABLE orders ADD COLUMN customer_id BIGINT;
+-- Agregar índice (concurrente, no bloquea):
+CREATE INDEX CONCURRENTLY idx_orders_customer_id ON orders (customer_id);
+
+-- FASE 2 - BACKFILL: copiar datos en batches (NO en una sola query)
+-- Script de backfill por lotes:
+DO $$
+DECLARE
+  batch_size  INT := 5000;
+  last_id     BIGINT := 0;
+  max_id      BIGINT;
+BEGIN
+  SELECT MAX(id) INTO max_id FROM orders;
+  WHILE last_id < max_id LOOP
+    UPDATE orders
+    SET customer_id = user_id
+    WHERE id > last_id AND id <= last_id + batch_size
+      AND customer_id IS NULL;
+    last_id := last_id + batch_size;
+    PERFORM pg_sleep(0.1);  -- throttle para no saturar I/O
+  END LOOP;
+END $$;
+
+-- Deploy del código que escribe en AMBAS columnas (user_id Y customer_id)
+
+-- FASE 3 - CONTRACT: remover columna vieja
+-- Primero asegurar que customer_id tiene NOT NULL (una vez backfill completo):
+ALTER TABLE orders ALTER COLUMN customer_id SET NOT NULL;
+-- Luego eliminar la vieja:
+ALTER TABLE orders DROP COLUMN user_id;
+-- Eliminar índice viejo si existía:
+DROP INDEX CONCURRENTLY idx_orders_user_id;
+\end{lstlisting}
+
+\section[CREATE INDEX CONCURRENTLY]{\emj{🔄}~CREATE INDEX CONCURRENTLY}
+
+\begin{lstlisting}[caption={Diferencias entre index normal y CONCURRENTLY}]
+-- Index normal: bloquea escrituras mientras construye
+-- Tarda segundos a minutos dependiendo del tamaño
+CREATE INDEX idx_orders_status ON orders (status);
+
+-- CONCURRENTLY: no bloquea escrituras (solo reads afectados brevemente al final)
+-- Tarda más (2-3 pasadas), pero es seguro en producción
+CREATE INDEX CONCURRENTLY idx_orders_status ON orders (status);
+
+-- Si falla (crash, cancelación): queda en estado INVALID
+-- Verificar:
+SELECT indexname, indisvalid
+FROM pg_indexes JOIN pg_index ON indexrelid = (
+  SELECT oid FROM pg_class WHERE relname = indexname
+)
+WHERE tablename = 'orders';
+
+-- Limpiar index inválido:
+DROP INDEX CONCURRENTLY idx_orders_status;
+-- Luego recrear
+\end{lstlisting}
+
+\section[pg\_repack: reorganizar sin bloquear]{\emj{🗃️}~pg\_repack: reorganizar sin bloquear}
+
+\texttt{VACUUM FULL} compacta una tabla pero la bloquea completamente.
+\texttt{pg\_repack} hace lo mismo construyendo la tabla nueva en segundo plano y haciendo swap atómico al final.
+
+\begin{lstlisting}[language=, caption={Uso de pg\_repack}]
+# Instalar extensión (en la BD):
+# CREATE EXTENSION pg_repack;
+
+# Reorganizar tabla (equivalente a VACUUM FULL sin lock prolongado):
+pg_repack -h localhost -U postgres -d mydb -t orders
+
+# Reorganizar tabla con nuevo orden físico (CLUSTER equivalente):
+pg_repack -h localhost -U postgres -d mydb -t orders --order-by created_at
+
+# Solo índices (reorganizar bloat en índices):
+pg_repack -h localhost -U postgres -d mydb -t orders --only-indexes
+
+# Toda la base de datos:
+pg_repack -h localhost -U postgres -d mydb
+\end{lstlisting}
+
+\section[Flyway y Liquibase]{\emj{🗄️}~Flyway y Liquibase}
+
+Herramientas de versionado de esquema: registran qué migraciones se han aplicado y aplican las pendientes en orden.
+
+\begin{lstlisting}[language=, caption={Convenciones de Flyway}]
+# Estructura de archivos:
+# db/migration/
+#   V1__init_schema.sql
+#   V2__add_orders_table.sql
+#   V3__add_customer_index.sql
+#   R__create_reports_view.sql   (repeatable: se reaplica si cambia)
+
+# Naming: V{version}__{description}.sql
+# Version puede ser numérica (1, 2, 3) o timestamp (20250115120000)
+
+# Aplicar migraciones pendientes:
+flyway migrate
+
+# Ver estado:
+flyway info
+
+# Validar que migraciones aplicadas coinciden con archivos:
+flyway validate
+
+# Reparar tabla de migraciones (si hay migration fallida):
+flyway repair
+\end{lstlisting}
+
+\begin{lstlisting}[language=, caption={Liquibase con changesets XML}]
+<!-- db/changelog/changelog.xml -->
+<!-- <databaseChangeLog>
+  <changeSet id="1" author="aldo">
+    <createTable tableName="customers">
+      <column name="id" type="BIGINT" autoIncrement="true">
+        <constraints primaryKey="true"/>
+      </column>
+      <column name="email" type="VARCHAR(255)">
+        <constraints nullable="false" unique="true"/>
+      </column>
+    </createTable>
+  </changeSet>
+
+  <changeSet id="2" author="aldo">
+    <addColumn tableName="orders">
+      <column name="customer_id" type="BIGINT"/>
+    </addColumn>
+  </changeSet>
+</databaseChangeLog> -->
+
+# Aplicar:
+liquibase update
+
+# Rollback al changeset anterior:
+liquibase rollback --tag=v1.0
+\end{lstlisting}
+
+\begin{lstlisting}[caption={Agregar NOT NULL sin downtime}]
+-- Problema: ALTER TABLE t ALTER COLUMN c SET NOT NULL
+-- escanea toda la tabla para verificar que no hay NULLs → lock largo
+
+-- Solución moderna (PG 12+):
+-- 1. Agregar constraint de check primero (sin NOT VALID → no escanea):
+ALTER TABLE orders ADD CONSTRAINT orders_customer_id_not_null
+  CHECK (customer_id IS NOT NULL) NOT VALID;
+
+-- 2. Validar en background (solo ShareUpdateExclusiveLock, no bloquea):
+ALTER TABLE orders VALIDATE CONSTRAINT orders_customer_id_not_null;
+
+-- 3. Ahora PG sabe que no hay NULLs → el SET NOT NULL es instantáneo:
+ALTER TABLE orders ALTER COLUMN customer_id SET NOT NULL;
+
+-- 4. Eliminar el constraint temporal:
+ALTER TABLE orders DROP CONSTRAINT orders_customer_id_not_null;
+\end{lstlisting}
+
+\begin{entrevistabox}
+\begin{enumerate}
+  \item Explica el Expand-Contract pattern. ¿Por qué no puedes simplemente renombrar una columna en un ALTER directo?
+  \item ¿Cuál es la diferencia entre \texttt{CREATE INDEX} y \texttt{CREATE INDEX CONCURRENTLY}? ¿Qué pasa si falla?
+  \item ¿Cómo agregas una columna NOT NULL a una tabla de 500M filas sin downtime?
+  \item ¿Qué pasa si una migración de Flyway falla a mitad? ¿Cómo lo resuelves?
+  \item ¿Cuándo usarías pg\_repack vs VACUUM FULL?
+  \item ¿Qué es un ``lock queue'' en PostgreSQL y cómo un DDL puede tumbar tu servicio aunque tarde solo 2 segundos?
+\end{enumerate}
+\end{entrevistabox}

@@ -1,0 +1,40 @@
+\documentclass[12pt, a4paper, openany]{book}
+\input{preamble}
+
+\begin{document}
+
+% ─── Portada ───────────────────────────────────────────────────────────────────
+\begin{titlepage}
+  \centering
+  \vspace*{3cm}
+  {\Huge\bfseries Apuntes DBA — Parte 2\par}
+  \vspace{1em}
+  {\Large Bases de Datos Nivel Senior / Staff\par}
+  \vspace{0.5em}
+  {\large\color{n-cyan} Query Planner · HA · Sharding · PITR · Event Sourcing · Seguridad · Monitoring\par}
+  \vspace{3cm}
+  {\large\bfseries Aldo Zetina Muci\~no\par}
+  \vspace{0.5em}
+  {\normalsize zetinaa3@gmail.com\par}
+  \vfill
+  {\normalsize Parte 2 — Nivel Senior/Staff\par}
+  {\normalsize \today\par}
+\end{titlepage}
+
+% ─── Tabla de contenidos ───────────────────────────────────────────────────────
+\tableofcontents
+\newpage
+
+% ─── Capítulos ─────────────────────────────────────────────────────────────────
+\input{chapters/14_query_planner}
+\input{chapters/15_performance_tuning}
+\input{chapters/16_high_availability}
+\input{chapters/17_sharding_distribucion}
+\input{chapters/18_migraciones}
+\input{chapters/19_pitr_backup}
+\input{chapters/20_event_sourcing}
+\input{chapters/21_seguridad}
+\input{chapters/22_monitoring}
+\input{chapters/23_entrevistas_senior}
+
+\end{document}

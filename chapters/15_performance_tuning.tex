@@ -1,0 +1,210 @@
+\chapter[Performance Tuning Avanzado]{\emj{⚡}~Performance Tuning Avanzado}
+
+\section[Autovacuum: el guardián silencioso]{\emj{🧹}~Autovacuum: el guardián silencioso}
+
+MVCC (Multi-Version Concurrency Control) significa que cada UPDATE en PostgreSQL crea una nueva versión de la fila; la vieja queda como ``dead tuple''.
+Autovacuum limpia dead tuples, actualiza estadísticas y previene \textbf{transaction ID wraparound} (el peor incidente de PostgreSQL: la BD se pone en modo solo-lectura).
+
+\begin{teoriabox}{Cómo funciona autovacuum}
+\begin{itemize}
+  \item \textbf{autovacuum launcher:} proceso maestro, activa workers según tablas que lo necesitan
+  \item \textbf{autovacuum worker:} trabaja una tabla a la vez; limitado por \texttt{autovacuum\_max\_workers} (default 3)
+  \item \textbf{Trigger de vacuum:} tabla con $>$ \texttt{autovacuum\_vacuum\_threshold + autovacuum\_vacuum\_scale\_factor × n\_live\_tup} dead tuples
+  \item \textbf{Trigger de analyze:} similar pero para estadísticas (\texttt{autovacuum\_analyze\_scale\_factor})
+  \item Autovacuum usa \texttt{cost delay} para no saturar I/O: trabaja en ráfagas, luego duerme
+\end{itemize}
+\end{teoriabox}
+
+\begin{lstlisting}[caption={Diagnosticar estado de autovacuum}]
+-- Tablas que más necesitan vacuum:
+SELECT schemaname, relname,
+       n_dead_tup, n_live_tup,
+       round(n_dead_tup::numeric / NULLIF(n_live_tup + n_dead_tup, 0) * 100, 2) AS dead_pct,
+       last_autovacuum, last_autoanalyze,
+       autovacuum_count, autoanalyze_count
+FROM pg_stat_user_tables
+ORDER BY n_dead_tup DESC
+LIMIT 20;
+
+-- Vacuums activos ahora mismo:
+SELECT pid, query, state, now() - pg_stat_activity.query_start AS duration
+FROM pg_stat_activity
+WHERE query LIKE 'autovacuum%';
+
+-- ¿Hay tablas con bloat alto?
+SELECT relname, pg_size_pretty(pg_total_relation_size(oid)) AS total_size,
+       pg_size_pretty(pg_relation_size(oid)) AS table_size
+FROM pg_class WHERE relkind = 'r'
+ORDER BY pg_total_relation_size(oid) DESC LIMIT 10;
+\end{lstlisting}
+
+\begin{lstlisting}[caption={Tuning de autovacuum por tabla}]
+-- Para tablas con alta tasa de cambios (ej: logs, eventos):
+ALTER TABLE events SET (
+  autovacuum_vacuum_scale_factor = 0.01,   -- vacuum cuando 1% de filas son dead
+  autovacuum_analyze_scale_factor = 0.005,
+  autovacuum_vacuum_cost_delay = 2,        -- ms de delay entre ráfagas (default 20)
+  autovacuum_vacuum_cost_limit = 400       -- trabajo por ráfaga (default 200)
+);
+
+-- VACUUM manual agresivo (para emergencias, bloquea concurrent vacuums):
+VACUUM (ANALYZE, VERBOSE) orders;
+
+-- VACUUM FULL: compacta tabla reescribiéndola (exclusivo, bloquea todo):
+-- Solo en ventana de mantenimiento, o usar pg_repack
+VACUUM FULL orders;
+\end{lstlisting}
+
+\section[Table Bloat y fill\_factor]{\emj{📦}~Table Bloat y fill\_factor}
+
+Bloat ocurre cuando vacuum no puede reclamar espacio porque hay transacciones largas activas, o cuando el espacio muerto no se reutiliza por la estructura física de páginas.
+
+\begin{lstlisting}[caption={fill\_factor para tablas con muchos UPDATEs}]
+-- fill_factor: qué porcentaje de cada página se llena al INSERT.
+-- El resto se reserva para UPDATEs "in-page" (HOT updates).
+-- HOT update: si la fila cabe en la misma página → no se actualiza el índice → mucho más rápido
+
+-- Para tablas con muchos UPDATEs, reducir fill_factor:
+ALTER TABLE orders SET (fillfactor = 70);
+-- Necesita VACUUM o CLUSTER para aplicar en páginas existentes
+
+-- Para tablas append-only (logs, eventos):
+ALTER TABLE audit_log SET (fillfactor = 100);  -- default
+
+-- Ver fill_factor actual:
+SELECT relname, reloptions FROM pg_class
+WHERE relname = 'orders';
+\end{lstlisting}
+
+\section[Connection Pooling con pgBouncer]{\emj{🔌}~Connection Pooling con pgBouncer}
+
+Cada conexión de PostgreSQL es un proceso OS. Con 200+ conexiones directas, el overhead de context switching degrada el rendimiento. pgBouncer es un proxy que multiplexa muchas conexiones de cliente sobre pocas conexiones reales.
+
+\begin{teoriabox}{Modos de pgBouncer}
+\begin{itemize}
+  \item \textbf{Session mode:} una conexión de PG por conexión de cliente mientras dure la sesión. Seguro pero no multiplexea mucho.
+  \item \textbf{Transaction mode:} una conexión de PG por transacción. Multiplexeo real. \textbf{Limitación:} no se pueden usar prepared statements de sesión, \texttt{SET LOCAL}, \texttt{LISTEN/NOTIFY}.
+  \item \textbf{Statement mode:} una conexión por statement. Solo para apps que no usan transacciones. Raramente útil.
+\end{itemize}
+\end{teoriabox}
+
+\begin{lstlisting}[language=, caption={pgbouncer.ini — configuración típica}]
+[databases]
+mydb = host=127.0.0.1 port=5432 dbname=mydb
+
+[pgbouncer]
+listen_port = 6432
+listen_addr = *
+auth_type = scram-sha-256
+auth_file = /etc/pgbouncer/userlist.txt
+
+pool_mode = transaction
+max_client_conn = 1000
+default_pool_size = 20          ; conexiones reales a PG
+min_pool_size = 5
+reserve_pool_size = 5
+reserve_pool_timeout = 3
+
+server_idle_timeout = 600
+client_idle_timeout = 0
+
+; Stats cada 60s en pgbouncer log
+stats_period = 60
+\end{lstlisting}
+
+\begin{lstlisting}[caption={Monitorear pgBouncer desde psql}]
+-- Conectarse a la base admin de pgbouncer (puerto 6432):
+-- psql -h localhost -p 6432 -U pgbouncer pgbouncer
+
+SHOW POOLS;    -- ver cl_active, cl_waiting, sv_active, sv_idle por pool
+SHOW STATS;    -- requests/s, bytes/s, query time promedio
+SHOW CLIENTS;  -- conexiones de cliente activas
+SHOW SERVERS;  -- conexiones a PostgreSQL activas
+\end{lstlisting}
+
+\section[Índices Avanzados]{\emj{📑}~Índices Avanzados}
+
+\begin{lstlisting}[caption={Partial, expression y covering indexes}]
+-- Partial index: solo indexa las filas que cumplen la condición
+-- Mucho más pequeño y mantenido solo cuando aplica el WHERE
+CREATE INDEX idx_orders_pending
+ON orders (created_at)
+WHERE status = 'pending';
+
+-- Expression index: indexa el resultado de una expresión
+CREATE INDEX idx_users_email_lower
+ON users (lower(email));
+
+-- Ahora solo usa el índice con: WHERE lower(email) = 'foo@example.com'
+-- No con: WHERE email = 'foo@example.com' (string diferente)
+
+-- Covering index (INCLUDE): añade columnas al índice sin que sean clave
+-- Permite Index Only Scan sin ir al heap
+CREATE INDEX idx_orders_customer_covering
+ON orders (customer_id) INCLUDE (status, total_amount, created_at);
+
+-- La query: SELECT status, total_amount FROM orders WHERE customer_id = 42
+-- puede usar Index Only Scan si visibility map está al día
+
+-- Concurrent index build (no bloquea escrituras):
+CREATE INDEX CONCURRENTLY idx_items_order_id ON items (order_id);
+-- Tarda más, pero la tabla sigue accesible
+\end{lstlisting}
+
+\begin{lstlisting}[caption={Detectar índices ineficientes}]
+-- Índices nunca usados:
+SELECT schemaname, relname, indexrelname, idx_scan, idx_tup_read
+FROM pg_stat_user_indexes
+WHERE idx_scan = 0
+ORDER BY pg_relation_size(indexrelid) DESC;
+
+-- Tablas con seq scans frecuentes (posibles índices faltantes):
+SELECT relname, seq_scan, idx_scan,
+       seq_scan::float / NULLIF(seq_scan + idx_scan, 0) AS seq_ratio
+FROM pg_stat_user_tables
+WHERE seq_scan > 100
+ORDER BY seq_scan DESC;
+
+-- Tamaño de índices:
+SELECT relname AS table, indexrelname AS index,
+       pg_size_pretty(pg_relation_size(indexrelid)) AS size
+FROM pg_stat_user_indexes
+ORDER BY pg_relation_size(indexrelid) DESC;
+\end{lstlisting}
+
+\section[work\_mem y shared\_buffers]{\emj{💾}~work\_mem y shared\_buffers}
+
+\begin{teoriabox}{Parámetros de memoria críticos}
+\begin{itemize}
+  \item \textbf{shared\_buffers:} caché de páginas de PG. Regla: 25--40\% de RAM. No poner $>$40\% porque el OS cache también ayuda y PG lo usa.
+  \item \textbf{work\_mem:} RAM por operación de sort/hash. Multiplicado por número de sorts simultáneos × conexiones. Regla conservadora: RAM / max\_connections / 4.
+  \item \textbf{maintenance\_work\_mem:} para VACUUM, CREATE INDEX, CLUSTER. Puede ser mayor (512MB--1GB en servidores grandes). No afecta conexiones normales.
+  \item \textbf{wal\_buffers:} buffer para escritura de WAL. Default: 3\% de shared\_buffers (mínimo 32kB, máximo 64MB). Raramente necesita ajuste.
+  \item \textbf{effective\_cache\_size:} no reserva RAM; solo le dice al planner cuánta RAM total (PG + OS) puede usarse como caché. Afecta decisiones de Index Scan. Poner 50--75\% de RAM total.
+\end{itemize}
+\end{teoriabox}
+
+\begin{lstlisting}[caption={Configuración de memoria recomendada (servidor 32GB)}]
+-- postgresql.conf:
+shared_buffers = 8GB              -- 25% de 32GB
+work_mem = 64MB                   -- conservador; subir por sesión si necesario
+maintenance_work_mem = 1GB
+effective_cache_size = 24GB       -- 75% de 32GB
+wal_buffers = 64MB
+
+-- Para una query pesada específica (analytics), subir work_mem temporalmente:
+SET work_mem = '2GB';
+SELECT /* heavy aggregation */ ...;
+RESET work_mem;
+\end{lstlisting}
+
+\begin{entrevistabox}
+\begin{enumerate}
+  \item ¿Qué es table bloat y cómo lo causas involuntariamente?
+  \item ¿Cuándo usarías pgBouncer en modo transaction vs session? ¿Qué pierdes en modo transaction?
+  \item Explica qué es un HOT update y cómo fill\_factor lo facilita.
+  \item ¿Por qué un índice nunca usado sigue costando dinero en producción?
+  \item ¿Qué pasa si pones work\_mem = 2GB con 200 conexiones y cada una hace 3 sorts simultáneos?
+  \item ¿Cómo detectas si autovacuum no está manteniendo una tabla?
+\end{enumerate}
+\end{entrevistabox}

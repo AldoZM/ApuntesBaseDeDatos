@@ -1,0 +1,182 @@
+\chapter[PITR, WAL y Backup]{\emj{💾}~PITR, WAL y Backup}
+
+\section[Write-Ahead Log en profundidad]{\emj{📝}~Write-Ahead Log en profundidad}
+
+WAL (Write-Ahead Log) es el mecanismo de durabilidad de PostgreSQL.
+\textbf{Regla fundamental:} ningún cambio se escribe al heap (datos) sin antes haberse escrito al WAL.
+Esto garantiza que tras un crash, el WAL puede re-aplicarse para recuperar el estado consistente.
+
+\begin{teoriabox}{Arquitectura del WAL}
+\begin{itemize}
+  \item \textbf{WAL segment:} archivos de 16MB en \texttt{pg\_wal/}. Nombrados por LSN (Log Sequence Number): \texttt{000000010000000000000001}.
+  \item \textbf{LSN (Log Sequence Number):} posición única en el flujo WAL. Formato: \texttt{X/YYZZZZZZ}. Siempre creciente.
+  \item \textbf{Checkpoint:} evento periódico que garantiza que todas las páginas sucias hasta cierto LSN están escritas al heap. Permite reutilizar WAL anterior al checkpoint.
+  \item \textbf{WAL writer:} proceso que flushea WAL buffers al disco. La frecuencia afecta latencia de commits.
+  \item \textbf{WAL sender:} envía WAL a standbys (replicación) o al archivador.
+\end{itemize}
+\end{teoriabox}
+
+\begin{lstlisting}[caption={Parámetros WAL críticos}]
+-- postgresql.conf:
+wal_level = replica          -- mínimo para replicación y archivado
+                             -- logical: replicación lógica también
+checkpoint_timeout = 5min    -- checkpoint automático cada X (default 5min)
+checkpoint_completion_target = 0.9  -- escribir páginas sucias en 90% del intervalo
+max_wal_size = 1GB           -- WAL puede crecer hasta X entre checkpoints
+min_wal_size = 80MB          -- retener al menos X de WAL
+wal_compression = on         -- comprimir WAL (reduce I/O a costo de CPU mínimo)
+
+-- Ver LSN actual y estado de WAL:
+SELECT pg_current_wal_lsn();               -- posición actual
+SELECT pg_walfile_name(pg_current_wal_lsn());  -- nombre de archivo actual
+SELECT pg_wal_lsn_diff(pg_current_wal_lsn(), '0/0');  -- bytes totales
+
+-- Ver checkpoints recientes:
+SELECT * FROM pg_stat_bgwriter;
+-- checkpoints_timed: cuántos por timeout (bueno)
+-- checkpoints_req: cuántos forzados por WAL lleno (malo → aumentar max_wal_size)
+\end{lstlisting}
+
+\section[WAL Archiving]{\emj{📦}~WAL Archiving}
+
+El archivado de WAL copia cada segmento completado a un almacenamiento externo (S3, NFS, etc.).
+Combinado con un base backup, permite PITR a cualquier punto en el tiempo.
+
+\begin{lstlisting}[caption={Configurar WAL archiving}]
+-- postgresql.conf:
+archive_mode = on
+archive_command = 'aws s3 cp %p s3://mi-bucket/wal-archive/%f'
+-- %p = ruta completa del archivo WAL
+-- %f = nombre del archivo (sin ruta)
+-- El comando debe retornar 0 solo si la copia fue exitosa
+
+-- Alternativa con rsync:
+-- archive_command = 'rsync -a %p backup-server:/mnt/wal-archive/%f'
+
+-- archive_cleanup_command: limpiar WAL archivados ya no necesarios (con pgBackRest):
+-- archive_cleanup_command = 'pg_archivecleanup /mnt/wal-archive %r'
+
+-- Verificar que el archivado funciona:
+SELECT archived_count, last_archived_wal, last_archived_time,
+       failed_count, last_failed_wal, last_failed_time
+FROM pg_stat_archiver;
+-- failed_count > 0 y creciendo: problema con archive_command
+\end{lstlisting}
+
+\section[pgBackRest: backup empresarial]{\emj{🛡️}~pgBackRest: backup empresarial}
+
+pgBackRest es la herramienta de backup más completa para PostgreSQL: maneja base backups, WAL archiving, compresión, cifrado y PITR.
+
+\begin{lstlisting}[language=, caption={pgbackrest.conf — configuración básica}]
+[global]
+repo1-path=/var/lib/pgbackrest
+repo1-retention-full=2          ; retener 2 full backups
+repo1-retention-diff=7          ; retener 7 differential backups
+repo1-cipher-type=aes-256-cbc
+repo1-cipher-pass=supersecret
+
+# Para S3:
+# repo1-type=s3
+# repo1-s3-bucket=mi-bucket-backups
+# repo1-s3-region=us-east-1
+
+[global:archive-push]
+compress-level=3
+
+[mydb]
+pg1-path=/var/lib/postgresql/data
+pg1-port=5432
+pg1-user=postgres
+\end{lstlisting>
+
+\begin{lstlisting}[language=, caption={pgBackRest — operaciones comunes}]
+# Inicializar el repositorio:
+pgbackrest --stanza=mydb stanza-create
+
+# Full backup:
+pgbackrest --stanza=mydb --type=full backup
+
+# Differential backup (desde último full):
+pgbackrest --stanza=mydb --type=diff backup
+
+# Incremental backup (desde último backup cualquiera):
+pgbackrest --stanza=mydb --type=incr backup
+
+# Ver información de backups:
+pgbackrest --stanza=mydb info
+
+# Restaurar último backup:
+pgbackrest --stanza=mydb restore
+
+# PITR: restaurar a punto específico en el tiempo:
+pgbackrest --stanza=mydb restore \
+  --type=time "--target=2025-06-15 14:30:00"
+
+# Verificar integridad del repositorio:
+pgbackrest --stanza=mydb check
+\end{lstlisting}
+
+\section[Procedimiento PITR]{\emj{🕰️}~Procedimiento PITR}
+
+Point-In-Time Recovery: restaurar la base a cualquier momento entre el último base backup y el WAL archivado más reciente.
+
+\begin{lstlisting}[caption={PITR manual con pg\_restore + WAL}]
+-- ESCENARIO: DROP TABLE accidental a las 14:23:00
+-- Base backup más reciente: 02:00 AM
+-- WAL archivado hasta: 14:30 (5 min después del desastre)
+
+-- PASO 1: Detener PostgreSQL
+-- systemctl stop postgresql
+
+-- PASO 2: Mover datos actuales:
+-- mv /var/lib/postgresql/data /var/lib/postgresql/data.broken
+
+-- PASO 3: Restaurar base backup:
+-- pgbackrest --stanza=mydb restore --delta  (o desde tar manual)
+
+-- PASO 4: Configurar recovery target en postgresql.conf:
+-- (PG 12+: en el mismo postgresql.conf)
+restore_command = 'pgbackrest --stanza=mydb archive-get %f "%p"'
+recovery_target_time = '2025-06-15 14:22:59'  -- un segundo antes del DROP
+recovery_target_action = promote  -- promote: cuando llegue al target, se convierte en primary
+
+-- PASO 5: Crear señal de recovery:
+-- touch /var/lib/postgresql/data/recovery.signal
+
+-- PASO 6: Iniciar PostgreSQL:
+-- systemctl start postgresql
+-- PG aplica WAL hasta 14:22:59 y promueve
+
+-- PASO 7: Verificar que la tabla existe y datos están correctos
+-- PASO 8: Tomar nuevo base backup
+\end{lstlisting}
+
+\begin{lstlisting}[caption={RPO y RTO — métricas de recuperabilidad}]
+-- RPO (Recovery Point Objective): ¿cuántos datos puedes perder?
+-- Con archivado WAL cada ~60s: RPO ~= 60 segundos de datos
+-- Con replicación síncrona: RPO = 0
+
+-- RTO (Recovery Time Objective): ¿cuánto tiempo toma recuperarse?
+-- Depende de: tamaño del backup + cantidad de WAL a replay
+-- pgBackRest con backup diferencial puede reducir RTO vs full backup
+
+-- Calcular WAL generado por día (útil para sizing de S3):
+SELECT pg_size_pretty(SUM(size))
+FROM pg_ls_waldir();
+
+-- Probar recovery ANTES de necesitarla (no en producción):
+-- Montar un servidor de prueba, restaurar, validar datos críticos
+-- El backup que nunca probaste no es un backup
+\end{lstlisting}
+
+\begin{entrevistabox}
+\begin{enumerate}
+  \item ¿Qué es un LSN y cómo se relaciona con el WAL?
+  \item Explica la diferencia entre un checkpoint y un backup.
+  \item ¿Qué es PITR? ¿Qué necesitas para poder hacerlo?
+  \item Si \texttt{checkpoints\_req} está creciendo en \texttt{pg\_stat\_bgwriter}, ¿qué indica y cómo lo corriges?
+  \item ¿Cuál es la diferencia entre RPO y RTO? Da un ejemplo concreto.
+  \item Un DROP TABLE ocurrió en producción hace 10 minutos. Tienes base backup y WAL archivado. Describe los pasos de recuperación.
+  \item ¿Por qué ``el backup que nunca probaste no es un backup''?
+\end{enumerate}
+\end{entrevistabox}

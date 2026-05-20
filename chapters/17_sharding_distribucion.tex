@@ -1,0 +1,160 @@
+\chapter[Sharding y Distribución]{\emj{🌐}~Sharding y Distribución}
+
+\section[Cuándo escalar horizontalmente]{\emj{📈}~Cuándo escalar horizontalmente}
+
+Escalar verticalmente (más CPU, RAM, SSD) es siempre la primera respuesta: más simple, sin cambios de arquitectura.
+El sharding horizontal se justifica cuando una sola máquina no puede manejar el volumen de escrituras o el tamaño de datos supera lo manejable en un nodo.
+
+\begin{teoriabox}{Límites que fuerzan la distribución}
+\begin{itemize}
+  \item \textbf{Write throughput:} un primary puede saturar su I/O de WAL. Sharding divide las escrituras entre múltiples primaries.
+  \item \textbf{Dataset size:} terabytes que no caben en RAM de un nodo degradan el performance a I/O puro.
+  \item \textbf{Geografía:} usuarios en distintas regiones necesitan latencia baja → datos cerca de ellos.
+  \item \textbf{Compliance:} datos de ciertos países deben residir en esa jurisdicción.
+\end{itemize}
+\textbf{Costo del sharding:} queries cross-shard se vuelven joins distribuidos (caros), transacciones distribuidas (2PC = complejo), y el operacional se multiplica.
+\end{teoriabox}
+
+\section[Partitioning nativo de PostgreSQL]{\emj{🗂️}~Partitioning nativo de PostgreSQL}
+
+El partitioning es el primer paso antes de sharding real. Divide una tabla lógica en múltiples tablas físicas (particiones) en el \emph{mismo} nodo.
+
+\begin{lstlisting}[caption={Table Partitioning por rango (tiempo)}]
+-- Tabla madre particionada:
+CREATE TABLE events (
+  id          BIGSERIAL,
+  user_id     BIGINT NOT NULL,
+  event_type  TEXT NOT NULL,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  payload     JSONB
+) PARTITION BY RANGE (created_at);
+
+-- Particiones por mes:
+CREATE TABLE events_2025_01 PARTITION OF events
+  FOR VALUES FROM ('2025-01-01') TO ('2025-02-01');
+
+CREATE TABLE events_2025_02 PARTITION OF events
+  FOR VALUES FROM ('2025-02-01') TO ('2025-03-01');
+
+-- Índices se crean por partición:
+CREATE INDEX ON events_2025_01 (user_id);
+CREATE INDEX ON events_2025_02 (user_id);
+
+-- Partición default para fuera de rango:
+CREATE TABLE events_default PARTITION OF events DEFAULT;
+
+-- PG rutea automáticamente INSERT/UPDATE/DELETE a la partición correcta
+INSERT INTO events (user_id, event_type, created_at)
+VALUES (42, 'click', '2025-01-15');
+-- Automáticamente va a events_2025_01
+\end{lstlisting}
+
+\begin{lstlisting}[caption={Partition pruning — verificar que funciona}]
+-- Con EXPLAIN, verificar que el planner elide particiones irrelevantes:
+EXPLAIN SELECT * FROM events
+WHERE created_at BETWEEN '2025-01-01' AND '2025-01-31';
+
+-- Debe aparecer solo events_2025_01, no todas las particiones
+-- Si aparecen todas: revisar que el filtro use la columna de partición exacta
+
+-- Manejar partition por hash (distribución uniforme sin semántica temporal):
+CREATE TABLE users_sharded (id BIGSERIAL, email TEXT)
+PARTITION BY HASH (id);
+
+CREATE TABLE users_sharded_0 PARTITION OF users_sharded
+  FOR VALUES WITH (modulus 4, remainder 0);
+CREATE TABLE users_sharded_1 PARTITION OF users_sharded
+  FOR VALUES WITH (modulus 4, remainder 1);
+-- ... etc para remainder 2 y 3
+\end{lstlisting}
+
+\section[Citus: Sharding sobre PostgreSQL]{\emj{🏗️}~Citus: Sharding sobre PostgreSQL}
+
+Citus es una extensión de PostgreSQL (ahora parte de Microsoft) que convierte PG en una BD distribuida.
+Un nodo coordinador recibe queries; las distribuye a workers que contienen fragmentos de datos.
+
+\begin{teoriabox}{Conceptos clave de Citus}
+\begin{itemize}
+  \item \textbf{Distributed table:} particionada en shards distribuidos entre workers por una \emph{distribution column}
+  \item \textbf{Reference table:} replicada en todos los workers (para tablas pequeñas en joins frecuentes: catálogos, configuración)
+  \item \textbf{Local table:} solo en el coordinador (metadatos del sistema)
+  \item \textbf{Colocation:} shards de dos tablas con la misma distribution column en el mismo worker → joins locales, sin red
+\end{itemize}
+\end{teoriabox}
+
+\begin{lstlisting}[caption={Setup básico de Citus}]
+-- Instalar extensión:
+CREATE EXTENSION citus;
+
+-- Agregar workers al coordinador:
+SELECT citus_add_node('worker1', 5432);
+SELECT citus_add_node('worker2', 5432);
+
+-- Distribuir tabla por tenant_id (SaaS típico):
+SELECT create_distributed_table('orders', 'tenant_id');
+SELECT create_distributed_table('items', 'tenant_id');  -- colocated con orders
+
+-- Reference table (catálogo de productos: misma en todos los workers):
+SELECT create_reference_table('products');
+
+-- Queries single-tenant van directo al shard correcto (rápido):
+SELECT * FROM orders WHERE tenant_id = 42;
+
+-- Queries cross-tenant se ejecutan en paralelo en todos los workers:
+SELECT tenant_id, COUNT(*) FROM orders GROUP BY tenant_id;
+\end{lstlisting}
+
+\section[Foreign Data Wrappers (FDW)]{\emj{🔗}~Foreign Data Wrappers (FDW)}
+
+FDW permite acceder a fuentes externas (otra base PG, MySQL, S3, CSV) como si fueran tablas locales.
+Útil para federación de datos y migraciones incrementales.
+
+\begin{lstlisting}[caption={postgres\_fdw — acceso a otra base PG}]
+-- En el servidor local:
+CREATE EXTENSION postgres_fdw;
+
+CREATE SERVER remote_orders
+  FOREIGN DATA WRAPPER postgres_fdw
+  OPTIONS (host 'remote-pg.example.com', port '5432', dbname 'orders_db');
+
+CREATE USER MAPPING FOR current_user
+  SERVER remote_orders
+  OPTIONS (user 'readonly_user', password 'secret');
+
+-- Importar todas las tablas de un schema remoto:
+IMPORT FOREIGN SCHEMA public
+  FROM SERVER remote_orders
+  INTO local_remote_schema;
+
+-- O crear tabla foránea individual:
+CREATE FOREIGN TABLE remote_customers (
+  id    BIGINT,
+  email TEXT,
+  name  TEXT
+) SERVER remote_orders OPTIONS (schema_name 'public', table_name 'customers');
+
+-- Usar como tabla local (push-down de filtros si es posible):
+SELECT * FROM remote_customers WHERE id = 42;
+\end{lstlisting}
+
+\section[CockroachDB y Vitess: alternativas]{\emj{🚀}~CockroachDB y Vitess: alternativas}
+
+\begin{teoriabox}{Comparativa de sistemas distribuidos}
+\begin{itemize}
+  \item \textbf{CockroachDB:} NewSQL compatible con PostgreSQL wire protocol. Distribuye datos automáticamente, transacciones distribuidas con Raft consensus. Operacional más simple que Citus pero overhead de latencia por consensus en cada write.
+  \item \textbf{Vitess:} sharding para MySQL (usado por YouTube, Slack). Middleware: no modifica MySQL internamente. Maneja connection pooling, query routing, resharding online. Compatible con MySQL 8.
+  \item \textbf{YugabyteDB:} open-source, compatible con PG y Cassandra API. DocDB storage engine + Raft. Bueno para geografía (multi-region).
+  \item \textbf{PlanetScale:} Vitess as a service. Branching de schema (como git para la BD).
+\end{itemize}
+\end{teoriabox}
+
+\begin{entrevistabox}
+\begin{enumerate}
+  \item ¿Cuándo tiene sentido sharding y cuándo es prematuro?
+  \item ¿Cuál es la diferencia entre partitioning y sharding?
+  \item En Citus, ¿qué es colocation y por qué importa para el rendimiento de joins?
+  \item ¿Qué es una reference table en Citus? ¿Cuándo la usarías?
+  \item Explica el problema de hot shard y cómo elegir una buena distribution column.
+  \item ¿Cuándo usarías CockroachDB en lugar de PostgreSQL + Patroni?
+\end{enumerate}
+\end{entrevistabox}

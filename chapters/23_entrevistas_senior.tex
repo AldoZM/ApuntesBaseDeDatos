@@ -1,0 +1,102 @@
+\chapter[Preguntas de Entrevista Senior/Staff]{\emj{🎯}~Preguntas de Entrevista Senior/Staff}
+
+Este capítulo reúne las preguntas más difíciles y representativas de entrevistas para roles DBA Senior, Staff Engineer o Database Engineer.
+Las respuestas son intencionalmente abiertas: buscan razonamiento, no memorización.
+
+\section[Diseño de sistemas]{\emj{🏗️}~Diseño de sistemas}
+
+\begin{entrevistabox}
+\begin{enumerate}
+  \item \textbf{(Diseño)} Diseña el schema de base de datos para un sistema de mensajería estilo WhatsApp con 1B usuarios. Considera: conversaciones grupales, mensajes, estados de lectura (doble check), búsqueda de mensajes, y archivos adjuntos.
+
+  \item \textbf{(Escala)} Tienes una tabla \texttt{orders} con 2B filas que crece 10M filas/día. Las queries más frecuentes filtran por \texttt{created\_at} (últimos 90 días) y por \texttt{customer\_id}. El autovacuum no alcanza. ¿Cuál es tu plan de acción de corto y largo plazo?
+
+  \item \textbf{(Arquitectura)} Tu equipo propone migrar de un monolito PostgreSQL a un sistema de microservicios con una BD por servicio. ¿Qué riesgos de datos identificas? ¿Cómo manejas las transacciones que cruzan servicios? ¿Cuándo esta migración tiene sentido vs cuándo es prematura?
+
+  \item \textbf{(Multi-tenant)} Diseña la estrategia de aislamiento de datos para un SaaS B2B con 5000 tenants de tamaños muy distintos (desde 10 usuarios hasta 100,000). Compara: BD por tenant, schema por tenant, RLS en schema compartido.
+
+  \item \textbf{(Tiempo real)} Diseña un sistema de leaderboard global en tiempo real para un juego con 50M usuarios activos simultáneos. ¿Qué BD usarías para los scores? ¿Para el ranking? ¿Cómo manejas los empates y la consistencia del ranking?
+\end{enumerate}
+\end{entrevistabox}
+
+\section[Performance y troubleshooting]{\emj{⚡}~Performance y troubleshooting}
+
+\begin{entrevistabox}
+\begin{enumerate}
+  \item \textbf{(Incident)} A las 3am recibes una alerta: las queries a la BD están tardando 10x más que normal. El servidor tiene CPU al 15\%, RAM al 60\%, I/O al 90\%. ¿Cuáles son tus primeros 5 pasos de diagnóstico? ¿Qué herramientas usas?
+
+  \item \textbf{(Query)} Tienes esta query que tarda 45 segundos y debes bajarla a $<$1 segundo:
+  \begin{small}
+  \texttt{SELECT c.name, SUM(o.total) FROM customers c LEFT JOIN orders o ON o.customer\_id = c.id WHERE c.country = 'MX' AND o.created\_at > NOW() - INTERVAL '1 year' GROUP BY c.name ORDER BY SUM(o.total) DESC;}
+  \end{small}
+  ¿Cómo la analizas? ¿Qué índices considerarías? ¿Qué otros cambios posibles hay?
+
+  \item \textbf{(Locking)} Una migración de 5 segundos (\texttt{ALTER TABLE ADD COLUMN}) causó 2 minutos de downtime completo. Explica exactamente qué ocurrió y cómo lo evitas en el futuro.
+
+  \item \textbf{(Autovacuum)} pg\_stat\_user\_tables muestra 50M dead tuples en tu tabla de eventos después de un batch update masivo. Autovacuum sigue corriendo pero el número no baja. ¿Qué puede estar causando esto y cómo lo resuelves?
+
+  \item \textbf{(Memory)} Tus sorts con ORDER BY están usando 2GB de temp files en disco (visible en logs). work\_mem está en 16MB. Quieres subirlo pero tienes 200 conexiones activas. ¿Cómo calculas el valor seguro y cómo lo aplicas sin riesgo de OOM?
+\end{enumerate}
+\end{entrevistabox}
+
+\section[High Availability y recuperación]{\emj{🔄}~High Availability y recuperación}
+
+\begin{entrevistabox}
+\begin{enumerate}
+  \item \textbf{(Failover)} Tu Patroni primary muere a las 2pm. El standby tiene 3 minutos de lag de replicación. ¿Qué pasa automáticamente? ¿Qué pasa con las transacciones que estaban en vuelo? ¿Qué datos se pierden? ¿Cómo notificas a los usuarios?
+
+  \item \textbf{(Recovery)} Un DBA junior ejecutó \texttt{DELETE FROM users} sin WHERE en producción a las 11:47am. Tienes base backup de las 2am y WAL archivado completo. Describe paso a paso el proceso de PITR. ¿Qué pasa con los datos escritos entre las 2am y las 11:47am?
+
+  \item \textbf{(Split-brain)} Explica el escenario de split-brain en un clúster de PG. ¿Cómo lo detecta Patroni? ¿Qué sacrifica el sistema para prevenirlo? (Hint: CAP theorem)
+
+  \item \textbf{(RPO/RTO)} Tu equipo tiene RPO = 5 minutos y RTO = 30 minutos. Diseña la arquitectura de backup y recuperación para PostgreSQL que cumpla estos SLAs. ¿Qué monitoreo implementas para verificar que el RPO se mantiene?
+
+  \item \textbf{(Geo)} Tus usuarios están en México, Europa y Asia. El P99 de latencia de BD es 800ms para Europa y Asia. ¿Qué estrategias de distribución considerarías? ¿Qué cambios de aplicación requieren?
+\end{enumerate}
+\end{entrevistabox}
+
+\section[Preguntas de fundamentos a nivel Staff]{\emj{🧠}~Preguntas de fundamentos a nivel Staff}
+
+\begin{entrevistabox}
+\begin{enumerate}
+  \item \textbf{(MVCC)} Explica el modelo MVCC de PostgreSQL. ¿Por qué un UPDATE en PG es más costoso que en Oracle? ¿Cómo impacta esto en el diseño de tablas con alta tasa de updates?
+
+  \item \textbf{(Transactions)} Explica las anomalías de concurrencia: dirty read, non-repeatable read, phantom read y serialization anomaly. ¿Qué nivel de aislamiento protege contra cada una? ¿Cuándo usarías SERIALIZABLE en producción?
+
+  \item \textbf{(Índices)} Explica internamente cómo funciona un índice B-tree. ¿Por qué es eficiente para range scans? ¿Cuándo un índice hash sería mejor? ¿Qué es un GIN index y para qué tipos de columnas aplica?
+
+  \item \textbf{(CAP)} Explica el CAP theorem en el contexto de una BD distribuida. ¿Dónde ubicas PostgreSQL en ese espectro? ¿Y CockroachDB? ¿Qué significa ``CP'' para las garantías que ofreces a tus usuarios?
+
+  \item \textbf{(Schema evolution)} Tu equipo trabaja con trunk-based development y deploy continuo. Un deploy incluye un cambio de schema (agregar columna NOT NULL con default). ¿Cómo garantizas que el deploy sea backward compatible con la versión anterior del código aún corriendo durante el rollout?
+\end{enumerate}
+\end{entrevistabox}
+
+\section[Cheat sheet de respuestas clave]{\emj{📌}~Cheat sheet de respuestas clave}
+
+\begin{teoriabox}{Números que debes saber de memoria}
+\begin{itemize}
+  \item \textbf{Página de PG:} 8KB por defecto
+  \item \textbf{Segmento WAL:} 16MB por defecto
+  \item \textbf{max\_connections default:} 100
+  \item \textbf{shared\_buffers recomendado:} 25\% de RAM
+  \item \textbf{effective\_cache\_size recomendado:} 75\% de RAM
+  \item \textbf{random\_page\_cost default:} 4.0 (HDD); ajustar a 1.1--1.5 en SSD
+  \item \textbf{statistics target default:} 100 (rango: 1--10000)
+  \item \textbf{checkpoint\_timeout default:} 5 minutos
+  \item \textbf{autovacuum\_vacuum\_scale\_factor default:} 0.2 (20\% de filas muertas)
+  \item \textbf{WAL level mínimo para replicación:} \texttt{replica}
+  \item \textbf{WAL level para replicación lógica:} \texttt{logical}
+\end{itemize}
+\end{teoriabox}
+
+\begin{teoriabox}{Patrones de diseño que debes dominar}
+\begin{itemize}
+  \item \textbf{Expand-Contract:} migraciones sin downtime
+  \item \textbf{Outbox Pattern:} at-least-once delivery entre BD y message broker
+  \item \textbf{Read Replica Pattern:} separar carga de lectura/escritura
+  \item \textbf{Shard by Tenant:} multi-tenant con Citus o partitioning
+  \item \textbf{Event Sourcing + CQRS:} sistemas de auditoría y alta consistencia
+  \item \textbf{Saga Pattern:} transacciones distribuidas en microservicios
+  \item \textbf{Circuit Breaker:} proteger la BD de cascading failures
+\end{itemize}
+\end{teoriabox}

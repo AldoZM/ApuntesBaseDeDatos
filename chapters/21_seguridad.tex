@@ -1,0 +1,189 @@
+\chapter[Seguridad en PostgreSQL]{\emj{🔐}~Seguridad en PostgreSQL}
+
+\section[Row-Level Security (RLS)]{\emj{🛡️}~Row-Level Security (RLS)}
+
+RLS permite que la BD misma filtre filas según el usuario actual, sin que la aplicación tenga que implementar los filtros.
+Ideal para arquitecturas multi-tenant donde cada tenant solo debe ver sus datos.
+
+\begin{teoriabox}{Cómo funciona RLS}
+\begin{itemize}
+  \item Habilitado por tabla con \texttt{ALTER TABLE ... ENABLE ROW LEVEL SECURITY}
+  \item Las policies definen qué filas puede ver/modificar cada usuario o rol
+  \item Un superuser o el owner de la tabla \textbf{no está sujeto a RLS} por defecto (a menos que se use \texttt{FORCE ROW LEVEL SECURITY})
+  \item Las policies se expresan como expresiones SQL que se agregan automáticamente a los WHERE
+\end{itemize}
+\end{teoriabox}
+
+\begin{lstlisting}[caption={RLS para multi-tenant SaaS}]
+-- Habilitar RLS en la tabla:
+ALTER TABLE orders ENABLE ROW LEVEL SECURITY;
+
+-- Policy de SELECT: cada usuario solo ve sus propias órdenes
+CREATE POLICY orders_tenant_isolation ON orders
+  FOR SELECT
+  USING (tenant_id = current_setting('app.current_tenant_id')::BIGINT);
+
+-- Policy de INSERT: solo puede insertar para su propio tenant
+CREATE POLICY orders_tenant_insert ON orders
+  FOR INSERT
+  WITH CHECK (tenant_id = current_setting('app.current_tenant_id')::BIGINT);
+
+-- Policy para UPDATE y DELETE:
+CREATE POLICY orders_tenant_update ON orders
+  FOR UPDATE
+  USING (tenant_id = current_setting('app.current_tenant_id')::BIGINT);
+
+-- La app debe setear el tenant ID al inicio de cada sesión/transacción:
+SET app.current_tenant_id = '42';
+-- O por transacción (más seguro):
+BEGIN;
+  SET LOCAL app.current_tenant_id = '42';
+  SELECT * FROM orders;  -- automáticamente filtrado a tenant 42
+COMMIT;
+
+-- Bypassar RLS para el admin (superuser ya bypasea por defecto):
+ALTER TABLE orders FORCE ROW LEVEL SECURITY;  -- aplica incluso al owner
+-- Crear rol admin que bypasea:
+CREATE ROLE admin_role BYPASSRLS;
+\end{lstlisting}
+
+\begin{lstlisting}[caption={Verificar policies activas}]
+SELECT schemaname, tablename, policyname, permissive, roles, cmd, qual
+FROM pg_policies
+WHERE tablename = 'orders';
+
+-- Testear como usuario específico:
+SET ROLE app_user;
+SET app.current_tenant_id = '42';
+SELECT COUNT(*) FROM orders;  -- debe mostrar solo órdenes de tenant 42
+RESET ROLE;
+\end{lstlisting}
+
+\section[Cifrado con pgcrypto]{\emj{🔑}~Cifrado con pgcrypto}
+
+\begin{lstlisting}[caption={Cifrado simétrico y hashing con pgcrypto}]
+CREATE EXTENSION pgcrypto;
+
+-- Hashing de contraseñas (bcrypt):
+-- Guardar hash:
+INSERT INTO users (email, password_hash)
+VALUES ('user@example.com', crypt('mi_password_123', gen_salt('bf', 12)));
+-- 'bf' = blowfish (bcrypt), 12 = cost factor
+
+-- Verificar contraseña:
+SELECT id FROM users
+WHERE email = 'user@example.com'
+  AND password_hash = crypt('mi_password_123', password_hash);
+-- Si retorna fila → contraseña correcta
+
+-- Cifrado simétrico de datos sensibles (AES):
+-- Cifrar al insertar:
+INSERT INTO payments (id, card_number_encrypted)
+VALUES (1, pgp_sym_encrypt('4111111111111111', 'clave_de_cifrado_secreta'));
+
+-- Descifrar:
+SELECT pgp_sym_decrypt(card_number_encrypted, 'clave_de_cifrado_secreta')
+FROM payments WHERE id = 1;
+
+-- MEJOR PRÁCTICA: no guardar la clave en la query. Pasar desde app.
+-- La clave debe venir del gestor de secretos (Vault, AWS Secrets Manager)
+-- y nunca aparecer en los logs de queries
+
+-- Cifrado asimétrico (PGP):
+-- Generar claves con gpg externo, usar pgp_pub_encrypt / pgp_pub_decrypt
+\end{lstlisting}
+
+\section[Autenticación y pg\_hba.conf]{\emj{🔒}~Autenticación y pg\_hba.conf}
+
+\begin{lstlisting}[language=, caption={pg\_hba.conf — reglas de autenticación}]
+# Formato: TYPE  DATABASE  USER  ADDRESS  METHOD
+# Las reglas se evalúan de arriba hacia abajo; primera coincidencia aplica
+
+# Rechazar conexiones locales de superuser por red:
+hostssl  all  postgres  0.0.0.0/0  reject
+
+# Requerir SSL + scram-sha-256 para conexiones de red:
+hostssl  all  all  0.0.0.0/0  scram-sha-256
+
+# Conexión local sin contraseña (para mantenimiento desde el servidor):
+local  all  postgres  peer
+
+# Replicación solo desde servidor de standby específico:
+hostssl  replication  replicator  10.0.0.2/32  scram-sha-256
+
+# md5 está deprecado (vulnerable a MITM); usar scram-sha-256
+\end{lstlisting}
+
+\begin{lstlisting}[caption={SSL/TLS — requerir cifrado en tránsito}]
+-- postgresql.conf:
+ssl = on
+ssl_cert_file = 'server.crt'
+ssl_key_file = 'server.key'
+ssl_ca_file = 'root.crt'     -- para verificación de clientes (mTLS)
+
+-- Verificar que la conexión usa SSL:
+SELECT ssl, version, cipher FROM pg_stat_ssl WHERE pid = pg_backend_pid();
+
+-- Forzar SSL para un usuario:
+ALTER USER app_user SET ssl = 'on';  -- no existe directamente; usar pg_hba.conf hostssl
+
+-- En el cliente (psql):
+-- psql "sslmode=verify-full sslrootcert=root.crt ..."
+\end{lstlisting}
+
+\section[Principio de Mínimo Privilegio]{\emj{👤}~Principio de Mínimo Privilegio}
+
+\begin{lstlisting}[caption={Roles y privilegios granulares}]
+-- Crear roles específicos por función:
+CREATE ROLE app_readonly;
+GRANT CONNECT ON DATABASE mydb TO app_readonly;
+GRANT USAGE ON SCHEMA public TO app_readonly;
+GRANT SELECT ON ALL TABLES IN SCHEMA public TO app_readonly;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO app_readonly;
+
+CREATE ROLE app_writer;
+GRANT app_readonly TO app_writer;
+GRANT INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO app_writer;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+  GRANT INSERT, UPDATE, DELETE ON TABLES TO app_writer;
+
+-- Usuario de la aplicación hereda del rol:
+CREATE USER app_user WITH PASSWORD 'securepass';
+GRANT app_writer TO app_user;
+
+-- Nunca conectar la app como superuser o como el owner del schema
+-- El owner puede DROP TABLE, ALTER TABLE, etc.
+
+-- Revocar privilegios no necesarios:
+REVOKE CREATE ON SCHEMA public FROM PUBLIC;  -- PG 14+ lo hace por defecto
+REVOKE ALL ON DATABASE mydb FROM PUBLIC;
+\end{lstlisting}
+
+\section[pg\_audit: logging de queries]{\emj{📋}~pg\_audit: logging de queries}
+
+\begin{lstlisting}[language=, caption={Configurar pg\_audit para compliance}]
+# postgresql.conf:
+shared_preload_libraries = 'pgaudit'
+pgaudit.log = 'write, ddl'   # ddl: CREATE/ALTER/DROP; write: INSERT/UPDATE/DELETE
+pgaudit.log_catalog = off    # no loggear queries de sistema (pg_catalog)
+pgaudit.log_relation = on    # incluir nombre de tabla/vista
+pgaudit.log_parameter = on   # incluir parámetros de prepared statements
+
+# Por rol específico:
+# ALTER ROLE audited_user SET pgaudit.log = 'all';
+
+# Formato del log:
+# AUDIT: SESSION,1,1,DDL,CREATE TABLE,TABLE,public.users,...
+# AUDIT: SESSION,2,1,WRITE,INSERT,TABLE,public.orders,...
+\end{lstlisting}
+
+\begin{entrevistabox}
+\begin{enumerate}
+  \item ¿Qué es Row-Level Security y cuándo la usarías?
+  \item Explica la diferencia entre \texttt{USING} y \texttt{WITH CHECK} en una policy de RLS.
+  \item ¿Por qué md5 está deprecado en pg\_hba.conf? ¿Qué usar en su lugar?
+  \item Un desarrollador quiere conectar la app a PG como superuser ``por simplicidad''. ¿Qué le dices?
+  \item ¿Cómo almacenarías contraseñas de usuarios en PostgreSQL? ¿Y números de tarjeta de crédito?
+  \item ¿Qué es mTLS y cuándo lo usarías en una conexión a PostgreSQL?
+\end{enumerate}
+\end{entrevistabox}

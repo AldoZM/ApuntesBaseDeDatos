@@ -1,0 +1,183 @@
+\chapter[Query Planner Internals]{\emj{🔍}~Query Planner Internals}
+
+\section[¿Qué hace el Query Planner?]{\emj{🧠}~¿Qué hace el Query Planner?}
+
+El Query Planner (o Query Optimizer) es el componente de PostgreSQL que toma una consulta SQL y decide \emph{cómo} ejecutarla físicamente.
+No importa si el SQL es correcto: si el planner elige un plan malo, la consulta puede tardar segundos en lugar de milisegundos.
+Entender el planner es la diferencia entre un DBA junior y uno senior.
+
+\begin{teoriabox}{Pipeline de ejecución de una query}
+\begin{enumerate}
+  \item \textbf{Parser:} SQL texto → árbol sintáctico (parse tree)
+  \item \textbf{Analyzer/Rewriter:} valida objetos (tablas, columnas existen), aplica reglas (vistas → subqueries)
+  \item \textbf{Planner/Optimizer:} genera planes posibles, estima costos, elige el más barato
+  \item \textbf{Executor:} ejecuta el plan elegido contra los datos reales
+\end{enumerate}
+El planner \textbf{nunca ejecuta} nada; solo genera y evalúa planes. El costo es una estimación, no un tiempo real.
+\end{teoriabox}
+
+\section[El modelo de costos]{\emj{💰}~El modelo de costos}
+
+PostgreSQL asigna un costo a cada operación del plan basado en parámetros de configuración.
+El costo no está en segundos; es una unidad abstracta donde \texttt{seq\_page\_cost = 1.0} es la referencia.
+
+\begin{teoriabox}{Parámetros clave de costo}
+\begin{itemize}
+  \item \texttt{seq\_page\_cost = 1.0} — costo de leer una página secuencialmente (de disco o buffer)
+  \item \texttt{random\_page\_cost = 4.0} — costo de acceso aleatorio (salto de disco). En SSD: bajar a 1.1--1.5
+  \item \texttt{cpu\_tuple\_cost = 0.01} — costo de procesar una fila
+  \item \texttt{cpu\_index\_tuple\_cost = 0.005} — costo de procesar una entrada de índice
+  \item \texttt{cpu\_operator\_cost = 0.0025} — costo de evaluar un operador (=, <, etc.)
+  \item \texttt{effective\_cache\_size} — estimación de cuánto RAM tiene el OS para caché de páginas. Afecta la decisión index scan vs seq scan
+\end{itemize}
+\end{teoriabox}
+
+\begin{lstlisting}[caption={Ajustar costos para SSD}]
+-- En postgresql.conf o por sesión:
+SET random_page_cost = 1.1;
+SET effective_cache_size = '12GB';  -- 75% de RAM total aprox
+
+-- Verificar valores actuales:
+SHOW random_page_cost;
+SELECT name, setting, unit FROM pg_settings
+WHERE name IN ('random_page_cost','seq_page_cost','effective_cache_size');
+\end{lstlisting}
+
+\section[Estadísticas: pg\_stats y ANALYZE]{\emj{📊}~Estadísticas: pg\_stats y ANALYZE}
+
+El planner estima selectividad (¿cuántas filas retorna este filtro?) usando estadísticas recopiladas por \texttt{ANALYZE}.
+Sin estadísticas actualizadas, el planner genera estimaciones malas y elige planes subóptimos.
+
+\begin{lstlisting}[caption={Explorar estadísticas del planner}]
+-- Estadísticas por columna:
+SELECT attname, n_distinct, correlation, most_common_vals, most_common_freqs
+FROM pg_stats
+WHERE tablename = 'orders' AND attname = 'status';
+
+-- n_distinct > 0: número exacto de valores únicos
+-- n_distinct < 0: fracción de filas únicas (ej: -0.95 = 95% únicos)
+-- correlation: 1.0 = físicamente ordenado (index scan muy eficiente)
+--              0.0 = aleatorio (index scan costoso, seq scan mejor)
+
+-- Forzar recolección de estadísticas:
+ANALYZE orders;
+ANALYZE VERBOSE orders;  -- muestra progreso
+
+-- Statistics target por columna (default 100, rango 1-10000):
+ALTER TABLE orders ALTER COLUMN status SET STATISTICS 500;
+ANALYZE orders;
+-- Mayor target = mejores estimaciones en columnas con distribución sesgada
+\end{lstlisting}
+
+\begin{tipbox}{Cuándo aumentar statistics target}
+Columna con distribución muy sesgada: pocos valores dominan (ej: \texttt{status = 'completed'} es 95\% de las filas).
+Con target bajo, el planner no ve los valores raros y subestima su selectividad.
+Sube a 200--500 en columnas de filtros frecuentes con distribución irregular.
+\end{tipbox}
+
+\section[EXPLAIN y EXPLAIN ANALYZE]{\emj{🔬}~EXPLAIN y EXPLAIN ANALYZE}
+
+\texttt{EXPLAIN} muestra el plan sin ejecutar. \texttt{EXPLAIN ANALYZE} ejecuta y muestra tiempos reales.
+La diferencia entre filas estimadas y reales revela problemas de estadísticas.
+
+\begin{lstlisting}[caption={Anatomía de EXPLAIN ANALYZE}]
+EXPLAIN (ANALYZE, BUFFERS, FORMAT TEXT)
+SELECT o.id, c.name, SUM(i.amount)
+FROM orders o
+JOIN customers c ON c.id = o.customer_id
+JOIN items i ON i.order_id = o.id
+WHERE o.created_at > NOW() - INTERVAL '30 days'
+GROUP BY o.id, c.name;
+
+-- Salida típica:
+-- HashAggregate (cost=1234.56..1289.78 rows=500 width=52)
+--               (actual time=45.2..47.8 rows=423 loops=1)
+--   Buffers: shared hit=890 read=234
+--   -> Hash Join (cost=...) (actual time=... rows=...)
+--        Hash Cond: (i.order_id = o.id)
+--        -> Seq Scan on items (cost=...) (actual rows=12847)
+--        -> Hash (actual rows=423 loops=1)
+--             -> Index Scan on orders using idx_orders_created_at
+--                  Index Cond: (created_at > ...)
+
+-- Interpretar:
+-- cost=inicio..total    — estimación del planner
+-- actual time=..        — tiempo real en ms
+-- rows=N (estimado) vs rows=N (actual) → si difieren mucho: stats problema
+-- Buffers: shared hit=X read=Y → hit=de cache, read=de disco
+-- loops=N → si > 1: este nodo se repite N veces (nested loop)
+\end{lstlisting}
+
+\begin{lstlisting}[caption={Detectar estimaciones malas}]
+-- Si "rows estimado" difiere 10x+ de "rows actual": problema de stats
+-- Ejemplo de plan malo:
+-- Seq Scan on orders (cost=0..50000 rows=5 width=...)
+--                    (actual time=... rows=45000 ...)
+-- El planner creyó que había 5 filas, había 45000 → eligió seq scan "barato"
+-- pero en realidad debía haber filtrado antes.
+
+-- Herramienta externa: https://explain.dalibo.com (visual)
+-- Pega el output de EXPLAIN (FORMAT JSON) para visualización
+EXPLAIN (ANALYZE, FORMAT JSON)
+SELECT * FROM orders WHERE customer_id = 42;
+\end{lstlisting}
+
+\section[Métodos de acceso a datos]{\emj{📁}~Métodos de acceso a datos}
+
+\begin{teoriabox}{Seq Scan vs Index Scan vs Index Only Scan}
+\begin{itemize}
+  \item \textbf{Seq Scan:} lee cada página de la tabla en orden. Costo fijo por página. Mejor cuando se leen $>$20--30\% de las filas.
+  \item \textbf{Index Scan:} usa el índice para encontrar TIDs (row pointers), luego hace heap fetch por cada TID. Ideal para baja selectividad ($<$5\% de filas).
+  \item \textbf{Index Only Scan:} todas las columnas requeridas están en el índice. No hay heap fetch. Más rápido que Index Scan pero requiere visibility map actualizado (VACUUM frecuente).
+  \item \textbf{Bitmap Index Scan:} acumula TIDs del índice en un bitmap, luego hace heap fetches ordenados por bloque físico. Reduce I/O aleatorio. Aparece cuando el planner espera muchos hits de índice.
+\end{itemize}
+\end{teoriabox}
+
+\begin{lstlisting}[caption={Forcing plan methods (debugging solamente)}]
+-- Deshabilitar métodos para comparar planes:
+SET enable_seqscan = OFF;
+SET enable_hashjoin = OFF;
+SET enable_mergejoin = OFF;
+
+-- Ver el plan alternativo:
+EXPLAIN SELECT * FROM orders WHERE status = 'pending';
+
+-- IMPORTANTE: restaurar siempre después de diagnosticar
+RESET enable_seqscan;
+RESET enable_hashjoin;
+\end{lstlisting}
+
+\section[Tipos de Join]{\emj{🔗}~Tipos de Join}
+
+\begin{teoriabox}{Nested Loop vs Hash Join vs Merge Join}
+\begin{itemize}
+  \item \textbf{Nested Loop:} para cada fila del outer, busca en el inner. Costo $O(N \times M)$ sin índice. Con índice en inner: $O(N \times \log M)$. Ideal cuando outer es pequeño y inner tiene índice.
+  \item \textbf{Hash Join:} construye hash table del inner (el más pequeño), luego escanea outer. Costo $O(N + M)$. Ideal para joins grandes sin índice. Requiere \texttt{work\_mem} para el hash table.
+  \item \textbf{Merge Join:} ambas relaciones ordenadas → un solo pasado. Costo $O(N \log N + M \log M)$ si hay que ordenar. Ideal cuando ambas entradas ya vienen ordenadas (por índice o SORT previo).
+\end{itemize}
+\end{teoriabox}
+
+\begin{lstlisting}[caption={work\_mem y Hash Join}]
+-- Si hash join usa disco (spill), aumentar work_mem:
+SET work_mem = '256MB';
+
+-- Verificar si hubo spill:
+EXPLAIN (ANALYZE, BUFFERS)
+SELECT * FROM big_table a JOIN other_big b ON a.id = b.id;
+-- Buscar: "Batches: 4" → hubo spill a disco (ideal: Batches: 1)
+
+-- CUIDADO: work_mem es por operación, por conexión.
+-- 100 conexiones × 4 sort ops × 256MB = 102 GB RAM posible
+-- Ajustar globalmente con cuidado; preferir por sesión/query
+\end{lstlisting}
+
+\begin{entrevistabox}
+\begin{enumerate}
+  \item ¿Qué información usa el Query Planner para estimar el costo de una query?
+  \item ¿Cuándo el planner elige un Seq Scan sobre un Index Scan aunque exista el índice?
+  \item ¿Qué significa que las filas estimadas y reales difieran 100x en EXPLAIN ANALYZE?
+  \item Explica la diferencia entre Index Scan e Index Only Scan. ¿Qué se necesita para que el segundo funcione eficientemente?
+  \item ¿Por qué \texttt{random\_page\_cost} es clave en servidores con SSD y cómo lo ajustarías?
+  \item ¿Qué hace ANALYZE y cuándo se debe correr manualmente?
+\end{enumerate}
+\end{entrevistabox}
